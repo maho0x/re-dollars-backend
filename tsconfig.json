@@ -4,18 +4,29 @@
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
         "rootDir": "./src",
-        "outDir": "./dist",
         "strict": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
-        "resolveJsonModule": true
+        "resolveJsonModule": true,
+        "allowSyntheticDefaultImports": true,
+        "declaration": false,
+        "sourceMap": false,
+        "removeComments": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "exactOptionalPropertyTypes": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUncheckedIndexedAccess": true
     },
     "include": [
-        "src/**/*"
+        "src/**/*",
+        "scripts/**/*"
     ],
     "exclude": [
         "node_modules",
-        "**/*.spec.ts"
+        "**/*.spec.ts",
+        "**/*.test.ts"
     ]
 }

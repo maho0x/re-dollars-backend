@@ -1,2 +1,5 @@
 packages:
   - '.'
+  
+# Workspace configuration for pnpm
+# This allows for potential future monorepo structure
