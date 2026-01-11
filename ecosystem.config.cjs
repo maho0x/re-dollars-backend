@@ -2,7 +2,8 @@ module.exports = {
     apps: [
         {
             name: "bgmchat",
-            script: "./dist/server.js",
+            script: "bun",
+            args: "src/server.ts",
             instances: 1,
             autorestart: true,
             watch: false,
@@ -14,8 +15,8 @@ module.exports = {
         },
         {
             name: "image-meta-worker",
-            script: "npx",
-            args: "tsx scripts/image_meta_worker.ts",
+            script: "bun",
+            args: "scripts/image_meta_worker.ts",
             instances: 1,
             autorestart: true,
             watch: false,

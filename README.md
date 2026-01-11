@@ -1,9 +1,11 @@
 # Bangumi Re:Dollars Backend
 
-A modern Express.js + TypeScript backend for the Bangumi Re:Dollars project.
+A modern Bun + TypeScript backend for the Bangumi Re:Dollars project.
 
 ## Features
 - **Modern TypeScript Stack**: Strict type checking with TypeScript 5.
+- **Bun Runtime**: Fast startup and native TypeScript support.
+- **Enhanced WebSocket**: Reliable message delivery with backpressure management.
 - **Structured Logging**: JSON logging via Pino.
 - **Config Validation**: Environment variables validation with Zod.
 - **Linting & Formatting**: ESLint + Prettier + Husky setup.
@@ -12,9 +14,9 @@ A modern Express.js + TypeScript backend for the Bangumi Re:Dollars project.
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+
-- PostgreSQL
-- Redis (Optional, for session store)
+- [Bun](https://bun.sh/) >= 1.0
+- PostgreSQL >= 13
+- (Optional) [pnpm](https://pnpm.io/) for package management
 
 ### Installation
 
@@ -26,7 +28,11 @@ A modern Express.js + TypeScript backend for the Bangumi Re:Dollars project.
 
 2. Install dependencies
    ```bash
-   npm install
+   # Recommended: use pnpm
+   pnpm install
+   
+   # Or use bun
+   bun install
    ```
 
 3. Configure environment
@@ -38,21 +44,26 @@ A modern Express.js + TypeScript backend for the Bangumi Re:Dollars project.
    - **Bangumi API**: Create an app at https://bgm.tv/dev/app and get your App ID/Secret.
    - **LSKY**: (Optional) If you use LSKY Pro for image hosting.
 
-
 ### Development
 
 Start the development server with hot reload:
 ```bash
-npm run dev
+bun dev
 ```
 
 ### Production
 
-Build and start the server:
+#### Option 1: Direct Bun (Recommended)
 ```bash
-npm run build
-npm start
+bun start
 ```
+
+#### Option 2: PM2 with Bun
+```bash
+pnpm pm2:start
+```
+
+No build step needed - Bun runs TypeScript directly!
 
 ## Contributing
 

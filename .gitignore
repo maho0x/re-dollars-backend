@@ -2,8 +2,8 @@
 node_modules
 .pnpm-store
 
-# Build Output
-dist
+# Build Output (not needed with Bun)
+# dist
 coverage
 
 # Environment Variables
@@ -14,6 +14,7 @@ coverage
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 logs
 *.log
 *.pid
