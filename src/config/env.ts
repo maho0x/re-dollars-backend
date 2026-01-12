@@ -38,7 +38,7 @@ const envSchema = z.object({
     BANGUMI_API_TOKEN: z.string().optional(), // Legacy
 
     // Bangumi API
-    BGM_API_BASE: z.string().default('https://api.bgm.tv'),
+    BGM_API_BASE: z.string().default('https://api.bgm.tv/v0'),
     BGM_ORIGIN: z.string().default('https://chii.in'),
     BGM_DOLLARS_PATH: z.string().default('/dollars'), // Default to the known Dollars topic
     BGM_COOKIE_JSON: z.string().default('[]'),

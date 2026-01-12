@@ -1,8 +1,43 @@
-import { pool } from '../db/pool.js';
+import { pool, searchPool } from '../db/pool.js';
 import { fetchBgmApi } from '../utils/bgmApi.js';
 import { MessageService } from './messageService.js';
 
 export class SearchService {
+    private static async resolveUserIdentifier(identifier: string): Promise<number | null> {
+        // Handle special cases
+        if (['0', 'bangumi', 'Bangumi娘'].includes(identifier)) {
+            return 0;
+        }
+
+        const isNumericId = /^\d+$/.test(identifier);
+
+        // 1. Try local searchPool users table first
+        try {
+            const query = isNumericId
+                ? 'SELECT uid FROM users WHERE uid = $1'
+                : 'SELECT uid FROM users WHERE username = $1';
+            const { rows } = await searchPool.query(query, [isNumericId ? parseInt(identifier) : identifier]);
+            if (rows.length > 0) {
+                return rows[0].uid;
+            }
+        } catch (e) {
+            console.error('[SearchService] searchPool query failed:', e);
+        }
+
+        // 2. Fallback to Bangumi API
+        try {
+            const resp = await fetchBgmApi(`/users/${encodeURIComponent(identifier)}`);
+            if (resp.ok) {
+                const u = await resp.json();
+                if (u?.id) return u.id;
+            }
+        } catch (e) {
+            // Ignore API errors
+        }
+
+        return null;
+    }
+
     static async searchMessages(query: string, limit = 50, offset = 0) {
         if (!query.trim()) return { results: [], hasMore: false };
 
@@ -13,12 +48,7 @@ export class SearchService {
         const match = query.match(/(?:from|in):(\S+)/);
         if (match) {
             text = query.replace(match[0], '').trim();
-            if (['0', 'bangumi', 'Bangumi娘'].includes(match[1])) {
-                uid = 0;
-            } else {
-                const u = await fetchBgmApi(`/users/${encodeURIComponent(match[1])}`).then(r => r.ok ? r.json() : null);
-                if (u) uid = u.id;
-            }
+            uid = await this.resolveUserIdentifier(match[1]);
         }
 
         const conds: string[] = [];
