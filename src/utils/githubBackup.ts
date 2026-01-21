@@ -4,11 +4,16 @@ import { config } from '../config/env.js';
 import { logger } from './logger.js';
 
 export const uploadBackupToGitHub = async (filePath: string) => {
-    const { repo, token, tag } = config.githubBackup;
+    const { repo, token } = config.githubBackup;
 
-    if (!repo || !token || !tag) {
+    if (!repo || !token) {
         return; // Not configured, skip silently
     }
+
+    // Generate daily tag: backup-YYYY-MM-DD
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const tag = `backup-${dateStr}`;
 
     const fileName = path.basename(filePath);
     logger.info(`[GitHub Backup] Starting upload for ${fileName} to ${repo} @ ${tag}`);
@@ -33,10 +38,10 @@ export const uploadBackupToGitHub = async (filePath: string) => {
                 headers,
                 body: JSON.stringify({
                     tag_name: tag,
-                    name: 'Daily Database Backups',
-                    body: 'Automated database backups.',
+                    name: `Backup ${dateStr}`,
+                    body: `Automated database backups for ${dateStr}.`,
                     draft: false,
-                    prerelease: true
+                    prerelease: false
                 })
             });
             if (!createRes.ok) throw new Error(`Failed to create release: ${createRes.status} ${createRes.statusText}`);
@@ -55,16 +60,6 @@ export const uploadBackupToGitHub = async (filePath: string) => {
             if (existingAsset) {
                 logger.info(`[GitHub Backup] Asset ${fileName} exists. Deleting old version...`);
                 await fetch(existingAsset.url, { method: 'DELETE', headers });
-            }
-
-            // Optional: Cleanup old backups (keep last 7)
-            // This logic assumes all assets in this release are backups
-            const sortedAssets = releaseData.assets.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-            if (sortedAssets.length > 30) { // Keep last 30
-                const toDelete = sortedAssets.slice(30);
-                for (const asset of toDelete) {
-                    await fetch(asset.url, { method: 'DELETE', headers });
-                }
             }
         }
 

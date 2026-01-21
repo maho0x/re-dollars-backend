@@ -5,6 +5,8 @@ import { UploadController } from '../controllers/uploadController.js';
 import { MiscController } from '../controllers/miscController.js';
 import { AdminController } from '../controllers/adminController.js';
 import { AuthController } from '../controllers/authController.js';
+import { ReadStatusController } from '../controllers/readStatusController.js';
+import { getMessageReplies, getReplyCountsBatch } from '../controllers/replyController.js';
 import { upload, uploadVideo } from '../middlewares/upload.js';
 
 const router = Router();
@@ -23,6 +25,10 @@ router.put('/messages/:id', AuthController.requireAuth, MessageController.editMe
 
 // ============ Search ============
 router.get('/search', MessageController.search);
+
+// ============ Read Status ============
+router.get('/messages/read', ReadStatusController.getReadStatus);
+router.post('/messages/read', ReadStatusController.updateReadStatus);
 
 // ============ Users ============
 router.get('/users/:identifier', UserController.getUser);

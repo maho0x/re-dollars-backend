@@ -89,7 +89,22 @@ export class MessageController {
                 return res.status(400).json({ message: 'Invalid date format' });
             }
 
-            const s = Math.floor(new Date(`${date}T00:00:00Z`).getTime() / 1000);
+            // Client sends date in YYYY-MM-DD format. We treat this as Hong Kong Time (UTC+8).
+            // To convert HKT YYYY-MM-DD 00:00:00 to UTC timestamp:
+            // 1. Parse as UTC Date first (e.g. 2025-01-13T00:00:00Z)
+            // 2. Subtract 8 hours (8 * 3600 seconds)
+            const utcDateMetric = Math.floor(new Date(`${date}T00:00:00Z`).getTime() / 1000);
+            const s = utcDateMetric - 8 * 3600;
+
+            // Optimization for calendar jump: return only the first message ID
+            if (req.query.first_id_only) {
+                const { rows } = await pool.query(
+                    'SELECT id FROM messages WHERE "timestamp" >= $1 AND "timestamp" < $2 ORDER BY "timestamp" ASC LIMIT 1',
+                    [s, s + 86400]
+                );
+                return res.json({ status: true, id: rows[0]?.id || null });
+            }
+
             const { rows } = await pool.query(
                 'SELECT * FROM messages WHERE "timestamp" >= $1 AND "timestamp" < $2 ORDER BY "timestamp" ASC',
                 [s, s + 86400]
@@ -325,10 +340,10 @@ export class MessageController {
     static async getMessageStatus(req: Request, res: Response, next: NextFunction) {
         try {
             const { since_db_id } = req.query;
-            
+
             const [latestResult, countResult] = await Promise.all([
                 pool.query('SELECT id, "timestamp" FROM messages ORDER BY id DESC LIMIT 1'),
-                since_db_id 
+                since_db_id
                     ? pool.query('SELECT COUNT(*) as count FROM messages WHERE id > $1', [since_db_id])
                     : Promise.resolve({ rows: [{ count: '0' }] })
             ]);

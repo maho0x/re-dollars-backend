@@ -169,10 +169,32 @@ export class MessageService {
             }
         }
 
+        // Helper function to strip all BBCode tags from text
+        const stripBBCode = (text: string): string => {
+            return text
+                // Remove [quote]...[/quote] blocks entirely (including content)
+                .replace(/\[quote[^\]]*\][\s\S]*?\[\/quote\]/gi, '')
+                // Remove [img]...[/img] blocks entirely
+                .replace(/\[img\][\s\S]*?\[\/img\]/gi, '')
+                // Remove [sticker]...[/sticker] blocks
+                .replace(/\[sticker[^\]]*\][\s\S]*?\[\/sticker\]/gi, '')
+                // Remove [url=...]...[/url] - keep the text inside
+                .replace(/\[url=[^\]]*\]([\s\S]*?)\[\/url\]/gi, '$1')
+                // Remove [url]...[/url] - keep the text inside
+                .replace(/\[url\]([\s\S]*?)\[\/url\]/gi, '$1')
+                // Remove [user=...]...[/user] - keep the nickname inside
+                .replace(/\[user=[^\]]*\]([\s\S]*?)\[\/user\]/gi, '@$1')
+                // Remove formatting tags [b], [i], [u], [s], [code], [color], [size] etc - keep content
+                .replace(/\[(b|i|u|s|code|color|size|font|center|right|left)[^\]]*\]([\s\S]*?)\[\/\1\]/gi, '$2')
+                // Remove any remaining BBCode tags
+                .replace(/\[[^\]]+\]/g, '')
+                .trim();
+        };
+
         // Process Replies
         const rpMap = new Map(repliesRes.rows.map(r => {
             const img = (/\[img\](https?:\/\/[^\]]+?)\[\/img\]/i.exec(r.message) || [])[1]?.split('?')[0];
-            const txt = r.message.replace(/\[quote.*?\[\/quote\]/gi, '').replace(/\[img\][\s\S]*?\[\/img\]/gi, '').trim().substring(0, 50);
+            const txt = stripBBCode(r.message).substring(0, 50);
             return [String(r.id), { uid: r.uid, nickname: r.nickname, content: txt, avatar: r.avatar, firstImage: img }];
         }));
 

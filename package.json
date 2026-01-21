@@ -5,7 +5,13 @@
   "author": "Bangumi Dollars Team",
   "license": "MIT",
   "type": "module",
-  "keywords": ["bangumi", "chat", "websocket", "typescript", "bun"],
+  "keywords": [
+    "bangumi",
+    "chat",
+    "websocket",
+    "typescript",
+    "bun"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/maho0x/re-dollars-backend.git"
@@ -61,6 +67,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "eslint-plugin-simple-import-sort": "^12.1.1",
+    "fast-check": "^4.5.3",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.4",

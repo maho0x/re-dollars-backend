@@ -44,8 +44,8 @@ export class SearchService {
         let uid: number | null = null;
         let text = query;
 
-        // Parse from:xxx or in:xxx
-        const match = query.match(/(?:from|in):(\S+)/);
+        // Parse user:xxx or from:xxx (保留 from: 向后兼容)
+        const match = query.match(/(?:user|from|in):(\S+)/);
         if (match) {
             text = query.replace(match[0], '').trim();
             uid = await this.resolveUserIdentifier(match[1]);

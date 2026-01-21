@@ -74,7 +74,7 @@ function fastPacket(baseStr: string, ackId: number): string {
  */
 function checkBackpressure(ws: WebSocket): boolean {
     const buffered = ws.bufferedAmount;
-    
+
     if (ws.meta.backpressure) {
         // 当前处于背压状态，检查是否可以恢复
         if (buffered < BUFFER_LOW_WATERMARK) {
@@ -99,11 +99,11 @@ function checkBackpressure(ws: WebSocket): boolean {
  */
 function drainPendingQueue(ws: WebSocket) {
     if (ws.readyState !== WebSocket.OPEN) return;
-    
+
     while (ws.meta.pendingQueue.length > 0 && !ws.meta.backpressure) {
         const item = ws.meta.pendingQueue.shift()!;
         const entry = ws.meta.unackedMessages.get(item.ackId);
-        
+
         if (entry && !entry.wasSent) {
             try {
                 ws.send(item.payloadStr);
@@ -115,7 +115,7 @@ function drainPendingQueue(ws: WebSocket) {
                 break;
             }
         }
-        
+
         // 重新检查背压
         checkBackpressure(ws);
     }
@@ -261,12 +261,12 @@ export function initWebSocket(server: Server) {
 
         for (const ws of allClients) {
             if (ws.readyState !== WebSocket.OPEN) continue;
-            
+
             // 先尝试排空待发送队列
             if (ws.meta.pendingQueue.length > 0) {
                 drainPendingQueue(ws);
             }
-            
+
             if (ws.meta.unackedMessages.size === 0) continue;
 
             for (const [ackId, entry] of ws.meta.unackedMessages) {
@@ -274,14 +274,14 @@ export function initWebSocket(server: Server) {
                 if (!entry.wasSent && ws.meta.pendingQueue.some(p => p.ackId === ackId)) {
                     continue;
                 }
-                
+
                 // 超过最大重试窗口，放弃
                 if (currentTime - entry.firstSentAt > MAX_RETRY_WINDOW_MS) {
                     console.warn(`[WS] Message ${ackId} to ${ws.meta.uid || 'anon'} expired after ${MAX_RETRY_WINDOW_MS}ms`);
                     ws.meta.unackedMessages.delete(ackId);
                     continue;
                 }
-                
+
                 if (currentTime >= entry.nextRetry) {
                     if (entry.retries >= MAX_RETRIES) {
                         // 超过最大重试次数
@@ -292,7 +292,7 @@ export function initWebSocket(server: Server) {
                         // 指数退避：600ms -> 900ms -> 1350ms -> 2025ms -> ...，上限 8 秒
                         const backoff = Math.min(ACK_TIMEOUT_MS_BASE * Math.pow(1.5, entry.retries), 8000);
                         entry.nextRetry = currentTime + backoff;
-                        
+
                         // 检查背压
                         if (!checkBackpressure(ws)) {
                             try {

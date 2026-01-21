@@ -1,5 +1,4 @@
 import multer from 'multer';
-import { config } from '../config/env.js';
 
 const storage = multer.memoryStorage();
 export const upload = multer({
@@ -14,16 +13,12 @@ export const upload = multer({
     }
 });
 
-const videoStorage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, config.storage.videosPath),
-    filename: (req, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}.mp4`) // Default extension or extract from file
-});
-
+// Video upload - use memory storage to send to remote processor
 export const uploadVideo = multer({
-    storage: videoStorage,
-    limits: { fileSize: 800 * 1024 * 1024 },
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit
     fileFilter: (req, file, cb) => {
-        const allowed = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/mp4', 'audio/x-m4a', 'audio/flac'];
+        const allowed = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/avi', 'video/x-msvideo'];
         cb(null, allowed.includes(file.mimetype));
     }
 });

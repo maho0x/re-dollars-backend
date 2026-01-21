@@ -61,6 +61,13 @@ const envSchema = z.object({
     BACKUP_DIR: z.string().default('./backups'),
     VIDEOS_PATH: z.string().default('./videos'),
 
+    // Video Processing
+    VIDEO_PROCESSING_ENABLED: z.coerce.boolean().default(true),
+    VIDEO_PROCESSING_QUALITY: z.enum(['low', 'medium', 'high']).default('medium'),
+    VIDEO_PROCESSING_CODEC: z.enum(['h264', 'hevc', 'av1', 'vp9', 'auto']).default('auto'),
+    VIDEO_MAX_CONCURRENT: z.coerce.number().default(1),
+    VIDEO_COMPRESSION_THRESHOLD: z.coerce.number().default(10), // 压缩率阈值（百分比），超过此值删除原文件
+
     // GitHub Backup (Optional)
     GITHUB_BACKUP_REPO: z.string().optional(),
     GITHUB_BACKUP_TOKEN: z.string().optional(),

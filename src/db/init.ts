@@ -83,8 +83,27 @@ export const initDb = async () => {
             is_read BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE (user_id, message_id, type)
+        );`,
+        `CREATE TABLE IF NOT EXISTS video_processing_queue (
+            id VARCHAR(255) PRIMARY KEY,
+            original_path TEXT NOT NULL,
+            status VARCHAR(20) DEFAULT 'pending' NOT NULL,
+            options JSONB DEFAULT '{}',
+            result JSONB,
+            error TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            processed_at TIMESTAMPTZ
         );`
     ];
+
+    // 1.5 Add user_read_state table
+    tableQueries.push(`CREATE TABLE IF NOT EXISTS user_read_state (
+            user_id INT NOT NULL,
+            channel_id VARCHAR(50) DEFAULT 'global' NOT NULL,
+            last_read_id INT DEFAULT 0 NOT NULL,
+            last_updated_at TIMESTAMPTZ DEFAULT NOW(),
+            PRIMARY KEY (user_id, channel_id)
+        );`);
 
     // 2. Define Indexes (Name and Definition)
     const indexDefinitions = [

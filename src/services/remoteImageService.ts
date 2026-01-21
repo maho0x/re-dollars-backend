@@ -31,7 +31,7 @@ export class RemoteImageService {
                 const timeoutId = setTimeout(() => controller.abort(), 10000);
 
                 try {
-                    const remoteRes = await fetch(config.remoteProcessorUrl, {
+                    const remoteRes = await fetch(`${config.remoteProcessorUrl}/process`, {
                         method: 'POST',
                         body: formData,
                         signal: controller.signal
@@ -150,6 +150,13 @@ export class RemoteImageService {
 
             const token = (mime === 'image/gif' && config.lsky.gifToken) ? config.lsky.gifToken : config.lsky.token;
 
+            console.log('[RemoteImageService] Using API upload mode:', {
+                apiUrl: config.lsky.apiUrl,
+                filename,
+                mime,
+                size: processBuffer.length
+            });
+
             const res = await fetch(config.lsky.apiUrl, {
                 method: 'POST',
                 headers: {
@@ -159,9 +166,23 @@ export class RemoteImageService {
                 },
                 body: formData
             });
+
             const data: any = await res.json();
-            if (!data.status) throw new Error(data.message);
+            console.log('[RemoteImageService] API response:', data);
+
+            if (!data.status) {
+                const errorMsg = data.message || 'Unknown error from Lsky API';
+                console.error('[RemoteImageService] API upload failed:', errorMsg, data);
+                throw new Error(`图片上传失败: ${errorMsg}`);
+            }
+
+            if (!data.data || !data.data.links || !data.data.links.url) {
+                console.error('[RemoteImageService] Invalid API response structure:', data);
+                throw new Error('图片上传失败: API 返回数据格式错误');
+            }
+
             imageUrl = data.data.links.url;
+            console.log('[RemoteImageService] Upload successful:', imageUrl);
         }
 
         // 3. Metadata

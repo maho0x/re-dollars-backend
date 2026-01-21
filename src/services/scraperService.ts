@@ -8,6 +8,7 @@ import sharp from 'sharp';
 import { imageSize as sizeOf } from 'image-size';
 import { encode } from 'blurhash';
 import { MessageService } from './messageService.js';
+import he from 'he';
 import mysql from 'mysql2/promise';
 
 // LSKY DB Pool
@@ -16,9 +17,9 @@ const getLskyPool = () => {
     if (!lskyPool && config.lskyDb.host) {
         lskyPool = mysql.createPool({
             host: config.lskyDb.host,
-            user: config.lskyDb.user,
-            password: config.lskyDb.password,
-            database: config.lskyDb.database,
+            user: config.lskyDb.user || '',
+            password: config.lskyDb.password || '',
+            database: config.lskyDb.database || '',
             port: config.lskyDb.port || 3306,
             waitForConnections: true,
             connectionLimit: 5,
@@ -61,14 +62,13 @@ const fetchWithRetry = async (url: string, options: any = {}, retries = 4): Prom
 };
 
 const normalizeMessage = (m: any): Message => ({
-    id: undefined, // DB will assign
     bangumi_id: String(m.id).replace(/[^0-9]/g, ''),
     uid: parseInt(String(m.uid), 10),
     nickname: m.nickname,
     avatar: m.avatar,
     color: m.color,
     timestamp: m.timestamp,
-    message: m.msg, // Map msg -> message
+    message: he.decode(m.msg || ''), // Decode HTML entities immediately
     type: m.type || 'text',
     is_html: false
 });
