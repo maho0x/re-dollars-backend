@@ -70,10 +70,19 @@ export class MessageService {
         let userAvatarMap = new Map<number, string>();
         if (reactionUserIds.length > 0) {
             try {
-                const { rows: users } = await searchPool.query('SELECT uid, avatar_url FROM users WHERE uid = ANY($1)', [reactionUserIds]);
-                userAvatarMap = new Map(users.map(u => [u.uid, u.avatar_url]));
+                // Add 2s timeout for remote DB query
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Search DB query timed out')), 2000)
+                );
+
+                const { rows: users } = await Promise.race([
+                    searchPool.query('SELECT uid, avatar_url FROM users WHERE uid = ANY($1)', [reactionUserIds]),
+                    timeoutPromise
+                ]) as any;
+
+                userAvatarMap = new Map(users.map((u: any) => [u.uid, u.avatar_url]));
             } catch (e) {
-                console.warn('[enrichMessages] Failed to fetch user avatars:', e);
+                console.warn('[enrichMessages] Failed to fetch user avatars (likely remote DB down):', e);
             }
         }
 

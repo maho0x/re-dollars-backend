@@ -20,9 +20,30 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Video files (configurable path)
+// Video files (configurable path) - with explicit MIME types for Firefox compatibility
 const videosPath = config.storage.videosPath;
-app.use('/videos', express.static(videosPath, { maxAge: '30d', immutable: true }));
+const videoMimeTypes: Record<string, string> = {
+    '.webm': 'video/webm',
+    '.mp4': 'video/mp4',
+    '.mkv': 'video/x-matroska',
+    '.mov': 'video/quicktime',
+    '.avi': 'video/x-msvideo',
+    '.mp3': 'audio/mpeg',
+    '.ogg': 'audio/ogg',
+    '.wav': 'audio/wav',
+    '.flac': 'audio/flac',
+    '.aac': 'audio/aac'
+};
+app.use('/videos', express.static(videosPath, {
+    maxAge: '30d',
+    immutable: true,
+    setHeaders: (res, filePath) => {
+        const ext = path.extname(filePath).toLowerCase();
+        if (videoMimeTypes[ext]) {
+            res.set('Content-Type', videoMimeTypes[ext]);
+        }
+    }
+}));
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/public', express.static(path.join(__dirname, '../public')));
 

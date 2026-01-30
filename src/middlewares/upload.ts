@@ -18,7 +18,12 @@ export const uploadVideo = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit
     fileFilter: (req, file, cb) => {
-        const allowed = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/avi', 'video/x-msvideo'];
+        const allowed = [
+            // Video formats
+            'video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/avi', 'video/x-msvideo',
+            // Audio formats
+            'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/aac', 'audio/webm', 'audio/flac'
+        ];
         cb(null, allowed.includes(file.mimetype));
     }
 });

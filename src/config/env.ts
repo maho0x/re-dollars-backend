@@ -25,6 +25,13 @@ const envSchema = z.object({
     SEARCH_DB_NAME: z.string().optional(),
     SEARCH_DB_PORT: z.coerce.number().optional(),
 
+    // Remote Search Database (for Sync)
+    REMOTE_SEARCH_DB_HOST: z.string().optional(),
+    REMOTE_SEARCH_DB_USER: z.string().optional(),
+    REMOTE_SEARCH_DB_PASS: z.string().optional(),
+    REMOTE_SEARCH_DB_NAME: z.string().optional(),
+    REMOTE_SEARCH_DB_PORT: z.coerce.number().optional(),
+
     // LSKY Database
     LSKY_DB_HOST: z.string().optional(),
     LSKY_DB_USER: z.string().optional(),
@@ -103,6 +110,13 @@ export const config = {
         password: env.SEARCH_DB_PASS,
         database: env.SEARCH_DB_NAME,
         port: env.SEARCH_DB_PORT,
+    },
+    remoteSearchDb: {
+        host: env.REMOTE_SEARCH_DB_HOST,
+        user: env.REMOTE_SEARCH_DB_USER,
+        password: env.REMOTE_SEARCH_DB_PASS,
+        database: env.REMOTE_SEARCH_DB_NAME,
+        port: env.REMOTE_SEARCH_DB_PORT,
     },
     lskyDb: {
         host: env.LSKY_DB_HOST,

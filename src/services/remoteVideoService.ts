@@ -1,6 +1,6 @@
-import FormData from 'form-data';
-import axios from 'axios';
-import { config } from '../config/env.js';
+import fs from 'fs/promises';
+import path from 'path';
+import crypto from 'crypto';
 
 export interface RemoteVideoProcessingOptions {
     quality?: 'low' | 'medium' | 'high';
@@ -23,100 +23,79 @@ export interface RemoteVideoProcessingResult {
     message?: string;
 }
 
+// Local video storage path
+const LOCAL_VIDEO_PATH = '/mnt1/docker/hath/videos';
+const LOCAL_VIDEO_PUBLIC_URL = process.env.LOCAL_VIDEO_PUBLIC_URL || '/videos';
+
 export class RemoteVideoService {
     /**
-     * Process video on remote server
+     * Process video and save to local storage
      */
     static async processVideo(
         buffer: Buffer,
         originalname: string,
         options: RemoteVideoProcessingOptions = {}
     ): Promise<RemoteVideoProcessingResult> {
+        const processStartTime = Date.now();
+
         try {
-            if (!config.remoteProcessorUrl) {
-                throw new Error('Remote processor URL not configured');
-            }
+            // Create date-based directory structure: YYYY/MM/DD
+            const now = new Date();
+            const y = String(now.getFullYear());
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
 
-            const quality = options.quality || 'medium';
-            const codec = options.codec || 'auto';
+            const targetDir = path.join(LOCAL_VIDEO_PATH, y, m, d);
+            await fs.mkdir(targetDir, { recursive: true });
 
-            console.log(`[RemoteVideoService] Sending video to remote processor: ${originalname}, quality: ${quality}, codec: ${codec}`);
+            // Generate random filename while preserving extension
+            const ext = path.extname(originalname) || '.mp4';
+            const randName = crypto.randomBytes(8).toString('hex');
+            const finalFilename = `${randName}${ext}`;
+            const filePath = path.join(targetDir, finalFilename);
 
-            const form = new FormData();
-            form.append('video', buffer, {
-                filename: originalname,
-                contentType: 'video/mp4'
-            });
-            form.append('quality', quality);
-            form.append('codec', codec);
+            console.log(`[RemoteVideoService] Saving video to local: ${filePath}`);
 
-            const response = await axios.post(
-                `${config.remoteProcessorUrl}/process-video`,
-                form,
-                {
-                    headers: form.getHeaders(),
-                    maxContentLength: Infinity,
-                    maxBodyLength: Infinity,
-                    timeout: 30 * 60 * 1000 // 30 minutes timeout
-                }
-            );
+            // Write video to local storage
+            await fs.writeFile(filePath, buffer);
 
-            if (response.data.status) {
-                console.log(`[RemoteVideoService] ✅ Video processed successfully: ${response.data.videoUrl}`);
-                console.log(`[RemoteVideoService] Compression: ${response.data.compressionRatio}%, Time: ${response.data.processTime}ms`);
-                
-                return {
-                    status: true,
-                    videoUrl: response.data.videoUrl,
-                    originalSize: response.data.originalSize,
-                    processedSize: response.data.processedSize,
-                    compressionRatio: response.data.compressionRatio,
-                    duration: response.data.duration,
-                    width: response.data.width,
-                    height: response.data.height,
-                    codec: response.data.codec,
-                    quality: response.data.quality,
-                    processTime: response.data.processTime
-                };
-            } else {
-                throw new Error(response.data.message || 'Remote processing failed');
-            }
+            // Construct public URL
+            const videoUrl = `${LOCAL_VIDEO_PUBLIC_URL}/${y}/${m}/${d}/${finalFilename}`;
+
+            const processTime = Date.now() - processStartTime;
+
+            console.log(`[RemoteVideoService] ✅ Video saved successfully: ${videoUrl}`);
+            console.log(`[RemoteVideoService] Size: ${(buffer.length / 1024 / 1024).toFixed(2)}MB, Time: ${processTime}ms`);
+
+            return {
+                status: true,
+                videoUrl,
+                originalSize: buffer.length,
+                processedSize: buffer.length, // No compression, same size
+                compressionRatio: 100,
+                processTime
+            };
 
         } catch (error) {
             console.error('[RemoteVideoService] ❌ Error:', error);
-            
-            if (axios.isAxiosError(error)) {
-                return {
-                    status: false,
-                    error: error.response?.data?.error || error.message,
-                    message: error.response?.data?.message || 'Remote processing failed'
-                };
-            }
 
             return {
                 status: false,
                 error: error instanceof Error ? error.message : 'Unknown error',
-                message: 'Remote processing failed'
+                message: 'Video processing failed'
             };
         }
     }
 
     /**
-     * Check if remote processor is available
+     * Check if local storage is available
      */
     static async checkAvailability(): Promise<boolean> {
         try {
-            if (!config.remoteProcessorUrl) {
-                return false;
-            }
-
-            const response = await axios.get(`${config.remoteProcessorUrl}/health`, {
-                timeout: 5000
-            });
-
-            return response.status === 200;
+            await fs.access(LOCAL_VIDEO_PATH, fs.constants.W_OK);
+            return true;
         } catch (error) {
-            console.warn('[RemoteVideoService] Remote processor not available:', error);
+            console.warn('[RemoteVideoService] Local video storage not available:', error);
             return false;
         }
     }

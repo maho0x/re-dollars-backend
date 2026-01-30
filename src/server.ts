@@ -4,6 +4,7 @@ import { config } from './config/env.js';
 import { initWebSocket } from './websocket/socketManager.js';
 import { startScraping } from './services/scraperService.js';
 import { startBackupScheduler } from './services/backupService.js';
+import { searchSyncService } from './services/searchSyncService.js';
 import { initDb } from './db/init.js';
 import { loadGlobalBlocklist } from './utils/blocklistManager.js';
 import { logger } from './utils/logger.js';
@@ -23,6 +24,9 @@ const startServer = async () => {
 
         // Start Backup Scheduler
         startBackupScheduler();
+
+        // Start Search Sync Service
+        searchSyncService.start();
 
         server.listen(config.port, () => {
             logger.info(`🚀 Server running on http://localhost:${config.port}`);

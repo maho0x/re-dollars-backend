@@ -4,13 +4,13 @@ import { Server } from 'http';
 const WS_PATH = process.env.WS_PATH || '/ws';
 const SWEEP_EVERY_MS = parseInt(process.env.PRESENCE_SWEEP_MS || '15000', 10);
 const WS_PING_EVERY_MS = parseInt(process.env.WS_PING_EVERY_MS || '30000', 10);
-const RETRY_TICK_MS = 150; // 更频繁的重试检查
+const RETRY_TICK_MS = 150;
 const OFFLINE_GRACE_PERIOD_MS = 30 * 60 * 1000;
-const ACK_TIMEOUT_MS_BASE = 600; // 更短的初始超时，前端网络好的话很快就能 ACK
+const ACK_TIMEOUT_MS_BASE = 3000; // 增加初始超时至3秒，适应移动端网络
 const MAX_RETRIES = 10; // 更多重试次数，覆盖更长的网络波动
 const BUFFER_HIGH_WATERMARK = 4 * 1024 * 1024; // 4MB 高水位
 const BUFFER_LOW_WATERMARK = 1 * 1024 * 1024; // 1MB 低水位
-const MAX_RETRY_WINDOW_MS = 30000; // 最长重试窗口 30 秒
+const MAX_RETRY_WINDOW_MS = 60000; // 最长重试窗口 60 秒
 
 const now = () => Date.now();
 
@@ -60,14 +60,12 @@ declare module 'ws' {
 
 const users = new Map<string, WSUser>();
 const allClients = new Set<WebSocket>();
+// 记录最近断开的匿名连接 ID => 断开时间
+const recentAnonDisconnects = new Map<number, number>();
 let nextConnId = 1;
 let nextMessageId = 1;
 
 // Helpers
-function fastPacket(baseStr: string, ackId: number): string {
-    // Assume baseStr is '{"a":1}' -> '{"a":1,"ackId":123}'
-    return baseStr.slice(0, -1) + `,"ackId":${ackId}}`;
-}
 
 /**
  * 检查并处理背压状态
@@ -79,6 +77,7 @@ function checkBackpressure(ws: WebSocket): boolean {
         // 当前处于背压状态，检查是否可以恢复
         if (buffered < BUFFER_LOW_WATERMARK) {
             ws.meta.backpressure = false;
+            console.warn(`[WS] Backpressure OFF for ${ws.meta?.uid || 'anon'}`);
             // 恢复后立即尝试发送待发送队列
             drainPendingQueue(ws);
         }
@@ -144,7 +143,13 @@ function sendReliable(ws: WebSocket, messageOrStr: string | any) {
     let payloadStr: string;
 
     if (typeof messageOrStr === 'string') {
-        payloadStr = fastPacket(messageOrStr, ackId);
+        try {
+            const parsed = JSON.parse(messageOrStr);
+            parsed.ackId = ackId;
+            payloadStr = JSON.stringify(parsed);
+        } catch {
+            payloadStr = JSON.stringify({ message: messageOrStr, ackId });
+        }
     } else {
         payloadStr = JSON.stringify({ ...messageOrStr, ackId });
     }
@@ -261,6 +266,11 @@ export function initWebSocket(server: Server) {
 
         for (const ws of allClients) {
             if (ws.readyState !== WebSocket.OPEN) continue;
+
+            // 主动检查背压状态，防止死锁
+            if (ws.meta.backpressure) {
+                checkBackpressure(ws);
+            }
 
             // 先尝试排空待发送队列
             if (ws.meta.pendingQueue.length > 0) {
