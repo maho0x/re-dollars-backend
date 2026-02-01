@@ -50,6 +50,29 @@ interface UserPublic {
     avatar?: string;
 }
 
+// Pending message tracking for optimistic update matching
+interface PendingMessage {
+    tempId: string;
+    uid: string;
+    contentHash: string;  // Simple hash of message content for matching
+    createdAt: number;
+}
+
+// Simple hash function for content matching
+function hashContent(content: string): string {
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+        const chr = content.charCodeAt(i);
+        hash = ((hash << 5) - hash) + chr;
+        hash |= 0;
+    }
+    return hash.toString(36);
+}
+
+// Pending messages: uid -> array of pending messages
+const pendingMessages = new Map<string, PendingMessage[]>();
+const PENDING_MESSAGE_TTL_MS = 30000; // 30 seconds TTL
+
 // Augment WebSocket
 declare module 'ws' {
     interface WebSocket {
@@ -460,6 +483,28 @@ export function initWebSocket(server: Server) {
                     safeSend(ws, '{"type":"pong"}');
                     break;
                 }
+                case 'pending_message': {
+                    // Client is sending a pending (optimistic) message for matching
+                    const uid = ws.meta?.uid;
+                    if (!uid || !data.tempId || !data.content) break;
+
+                    const pending: PendingMessage = {
+                        tempId: String(data.tempId),
+                        uid: String(uid),
+                        contentHash: hashContent(String(data.content)),
+                        createdAt: now()
+                    };
+
+                    // Add to pending list for this user
+                    const userPending = pendingMessages.get(pending.uid) || [];
+                    userPending.push(pending);
+                    pendingMessages.set(pending.uid, userPending);
+
+                    // Cleanup old pending messages (TTL)
+                    const cutoff = now() - PENDING_MESSAGE_TTL_MS;
+                    pendingMessages.set(pending.uid, userPending.filter(p => p.createdAt > cutoff));
+                    break;
+                }
             }
         });
 
@@ -540,5 +585,34 @@ export function initWebSocket(server: Server) {
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
 
-    return { broadcast, sendToUser, getOnlineCount };
+    /**
+     * Match a newly scraped message with a pending (optimistic) message.
+     * If matched, returns the tempId; otherwise returns null.
+     * The pending message is consumed (removed) upon match.
+     */
+    const matchPendingMessage = (uid: string | number, content: string): string | null => {
+        const uidStr = String(uid);
+        const userPending = pendingMessages.get(uidStr);
+        if (!userPending || userPending.length === 0) return null;
+
+        const contentHash = hashContent(content);
+        const cutoff = now() - PENDING_MESSAGE_TTL_MS;
+
+        // Find matching pending message (same uid and content hash, not expired)
+        const matchIndex = userPending.findIndex(p =>
+            p.contentHash === contentHash && p.createdAt > cutoff
+        );
+
+        if (matchIndex === -1) return null;
+
+        // Found a match - consume it
+        const [matched] = userPending.splice(matchIndex, 1);
+        if (userPending.length === 0) {
+            pendingMessages.delete(uidStr);
+        }
+
+        return matched?.tempId ?? null;
+    };
+
+    return { broadcast, sendToUser, getOnlineCount, matchPendingMessage };
 }

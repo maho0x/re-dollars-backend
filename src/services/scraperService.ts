@@ -428,7 +428,16 @@ export const scrapeOnce = async (wsManager: WSManager | null, { sinceTs, immobil
             ? { latest_db_id: Math.max(...enriched.map(e => e.id || -1)) }
             : { latest_db_id: Math.max(...enriched.map(e => e.id || -1)), sweep: true };
 
-
+        // Match enriched messages with pending (optimistic) messages
+        // If matched, attach tempId for frontend to use instead of content matching
+        if (wsManager.matchPendingMessage) {
+            for (const msg of enriched) {
+                const tempId = wsManager.matchPendingMessage(msg.uid, msg.message);
+                if (tempId) {
+                    (msg as any).tempId = tempId;
+                }
+            }
+        }
 
         wsManager.broadcast({ type: 'new_messages', payload: enriched, meta });
     }
