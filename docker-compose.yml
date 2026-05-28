@@ -1,0 +1,13 @@
+services:
+  re-dollars-backend-next:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "13032:13032"
+    volumes:
+      - ${HOST_VIDEOS_PATH:-./videos}:${VIDEOS_PATH:-/app/videos}:ro
+      - ${HOST_PUBLIC_DIR:-./public}:${PUBLIC_DIR:-/app/public}:ro
+      - ${HOST_BACKUP_DIR:-./backups}:${BACKUP_DIR:-/app/backups}
