@@ -63,17 +63,17 @@ daily `pg_dump` at `BACKUP_HOUR`; `BACKUP_RUN_ON_START=true` also runs one at
 process startup. Backups are written to `BACKUP_DIR`, old `.sql` files are
 pruned after `BACKUP_KEEP_DAYS`, and Docker Compose persists them via
 `HOST_BACKUP_DIR`. `BACKUP_EXCLUDE_TABLE_DATA` defaults to `auth_tokens` so
-session tokens are not dumped. If `GITHUB_BACKUP_REPO` and `GITHUB_BACKUP_TOKEN`
-are set, each backup is uploaded to a daily GitHub release tagged
-`GITHUB_BACKUP_TAG-YYYY-MM-DD`. The Docker image installs `postgresql-client`
-for `pg_dump`; direct/PM2 deployments need `pg_dump` on `PATH` or a
-`BACKUP_PG_DUMP_BIN` override.
+session tokens are not dumped. If `R2_BACKUP_REMOTE` is set, each backup is
+uploaded with `rclone copyto` to that remote, for example `r2:re-dollars`.
+Remote retention uses `rclone delete --min-age`. The Docker image installs
+`postgresql-client` and `rclone`; direct/PM2 deployments need `pg_dump` and
+`rclone` on `PATH`, or `BACKUP_PG_DUMP_BIN` / `R2_BACKUP_RCLONE_BIN` overrides.
 
 Chat log archives are separate from database backups. Set
 `CHAT_LOG_BACKUP_ENABLED=true` to export complete UTC days from `messages` as
 gzipped JSONL files in `CHAT_LOG_BACKUP_DIR`; old `.jsonl.gz` archives are
-pruned after `CHAT_LOG_BACKUP_KEEP_DAYS`. When the GitHub backup credentials are
-set, chat logs upload to releases tagged `CHAT_LOG_BACKUP_TAG-YYYY-MM-DD`.
+pruned after `CHAT_LOG_BACKUP_KEEP_DAYS`. When `R2_BACKUP_REMOTE` is set, chat
+logs upload to the same R2 remote.
 
 `LSKY_DB_*` is accepted for legacy image metadata compatibility. When
 configured, the native scraper looks up width and height in the LSKY MySQL
@@ -117,7 +117,7 @@ when global bot memory should live somewhere other than `./MEMORY.md`.
 - Move write paths one by one. Implemented write paths include reactions, read state, favorites, auth token login, message edit/delete, upload proxying, static media serving, admin blocklists, debug notification insertion, localhost scraper backfill, and a localhost bot automation bridge.
 - Browser message posting remains same-origin to Bangumi (`/dollars?ajax=1`) while the userscript runs on bangumi.tv because backend-next cannot receive the user's Bangumi session cookie on the new domain. After that post succeeds, the userscript polls `/api/v1/messages/confirm`; backend-next returns the canonical ingested message once the scraper or DB tail sees it.
 - Remote profile synchronization from the legacy search database can run in this service before cutover, so avatar/user lookup cache freshness no longer depends on the old backend process.
-- The legacy database backup scheduler is available as an opt-in backend-next service, including local retention and optional GitHub release uploads.
+- The legacy database backup scheduler is available as an opt-in backend-next service, including local retention and optional R2 uploads.
 - LSKY MySQL image dimension lookup is available for the native scraper, so new-domain clients can keep receiving `image_meta` for newly scraped image posts after cutover.
 
 Recommended cutover modes:

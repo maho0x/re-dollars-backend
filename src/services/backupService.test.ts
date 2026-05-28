@@ -7,9 +7,10 @@ import {
   BackupService,
   buildPgDumpInvocation,
   cleanOldBackups,
+  cleanOldR2Backups,
   nextBackupDelayMs,
   safeBackupStem,
-  uploadBackupToGitHub,
+  uploadBackupToR2,
 } from './backupService.js';
 
 const tempDirs: string[] = [];
@@ -25,13 +26,6 @@ afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
   }));
 });
-
-function okJson(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
 
 describe('backup helpers', () => {
   it('builds pg_dump arguments without shell interpolation', () => {
@@ -107,42 +101,57 @@ describe('backup helpers', () => {
   });
 });
 
-describe('uploadBackupToGitHub', () => {
-  it('creates a daily release and uploads the dump when configured', async () => {
+describe('R2 backup helpers', () => {
+  it('uploads a backup with rclone copyto when configured', async () => {
     const dir = await tempDir();
-    const filePath = join(dir, 'dump.sql');
+    const filePath = join(dir, 'bgmchat_backup.sql');
     await writeFile(filePath, 'backup sql');
-    const calls: Array<{ url: string; init?: RequestInit }> = [];
-    const fetchFn = async (url: string, init?: RequestInit) => {
-      calls.push(init === undefined ? { url } : { url, init });
-      if (url.endsWith('/releases/tags/db-backup-2026-05-26')) return okJson({}, 404);
-      if (url.endsWith('/releases')) {
-        return okJson({ upload_url: 'https://uploads.github.com/repos/acme/backups/releases/1/assets{?name,label}' });
-      }
-      if (url.startsWith('https://uploads.github.com/')) return new Response('', { status: 201 });
-      return new Response('', { status: 500 });
+    const spawned: Array<{ command: string; args: string[] }> = [];
+    const spawnProcess = (command: string, args: string[]) => {
+      spawned.push({ command, args });
+      const child = new EventEmitter();
+      queueMicrotask(() => child.emit('close', 0, null));
+      return child as never;
     };
 
-    const uploaded = await uploadBackupToGitHub(
-      filePath,
-      { repo: 'acme/backups', token: 'ghp_secret', tagPrefix: 'db-backup' },
-      fetchFn,
-      new Date('2026-05-26T12:00:00.000Z'),
-    );
+    const uploaded = await uploadBackupToR2(filePath, { remote: 'r2:bangumi-status', rcloneBin: 'rclone' }, spawnProcess as never);
 
     expect(uploaded).toBe(true);
-    expect(calls.map((call) => call.url)).toEqual([
-      'https://api.github.com/repos/acme/backups/releases/tags/db-backup-2026-05-26',
-      'https://api.github.com/repos/acme/backups/releases',
-      'https://uploads.github.com/repos/acme/backups/releases/1/assets?name=dump.sql',
+    expect(spawned).toEqual([
+      { command: 'rclone', args: ['copyto', filePath, 'r2:bangumi-status/bgmchat_backup.sql'] },
     ]);
-    expect(calls[1]?.init?.method).toBe('POST');
-    expect(calls[2]?.init?.method).toBe('POST');
   });
 
-  it('skips GitHub upload when repo or token is missing', async () => {
-    const uploaded = await uploadBackupToGitHub('/tmp/missing.sql', { repo: undefined, token: undefined, tagPrefix: 'backup' });
+  it('cleans old R2 backups with rclone delete', async () => {
+    const spawned: Array<{ command: string; args: string[] }> = [];
+    const spawnProcess = (command: string, args: string[]) => {
+      spawned.push({ command, args });
+      const child = new EventEmitter();
+      queueMicrotask(() => child.emit('close', 0, null));
+      return child as never;
+    };
+
+    const cleaned = await cleanOldR2Backups(
+      { remote: 'r2:bangumi-status', rcloneBin: 'rclone' },
+      7,
+      'bgmchat_backup_*.sql',
+      spawnProcess as never,
+    );
+
+    expect(cleaned).toBe(true);
+    expect(spawned).toEqual([
+      {
+        command: 'rclone',
+        args: ['delete', '--min-age', '7d', 'r2:bangumi-status', '--include=bgmchat_backup_*.sql'],
+      },
+    ]);
+  });
+
+  it('skips R2 upload and cleanup when no remote is configured', async () => {
+    const uploaded = await uploadBackupToR2('/tmp/missing.sql', { remote: undefined, rcloneBin: 'rclone' });
+    const cleaned = await cleanOldR2Backups({ remote: undefined, rcloneBin: 'rclone' }, 7, '*.sql');
     expect(uploaded).toBe(false);
+    expect(cleaned).toBe(false);
   });
 });
 
@@ -158,17 +167,14 @@ describe('BackupService', () => {
       spawned.push({ command, args });
       const child = new EventEmitter();
       queueMicrotask(() => {
+        if (command !== 'pg_dump') {
+          child.emit('close', 0, null);
+          return;
+        }
         const outputPath = args[args.indexOf('-f') + 1];
         if (typeof outputPath === 'string') void writeFile(outputPath, 'dump').then(() => child.emit('close', 0, null));
       });
       return child as never;
-    };
-    const fetchFn = async (url: string) => {
-      if (url.includes('/releases/tags/backup-2026-05-26')) {
-        return okJson({ upload_url: 'https://uploads.github.com/repos/acme/backups/releases/1/assets{?name,label}' });
-      }
-      if (url.startsWith('https://uploads.github.com/')) return new Response('', { status: 201 });
-      return new Response('', { status: 500 });
     };
     const service = new BackupService({
       enabled: true,
@@ -181,21 +187,28 @@ describe('BackupService', () => {
         password: 'secret',
         database: 'bgmchat',
       },
-      github: { repo: 'acme/backups', token: 'token', tagPrefix: 'backup' },
+      r2: { remote: 'r2:bangumi-status', rcloneBin: 'rclone' },
       excludeTableData: ['auth_tokens'],
       spawnProcess: spawnProcess as never,
-      fetchFn,
       now: () => new Date('2026-05-26T12:00:00.000Z'),
     });
 
     const result = await service.performBackup();
 
     expect(result.status).toBe('ok');
-    expect(result.uploadedToGitHub).toBe(true);
+    expect(result.uploadedToR2).toBe(true);
     expect(result.deletedOldBackups).toEqual(['old.sql']);
     expect(spawned[0]?.command).toBe('pg_dump');
     expect(spawned[0]?.args).toContain('bgmchat');
     expect(spawned[0]?.args).toContain('--exclude-table-data=auth_tokens');
+    expect(spawned[1]).toEqual({
+      command: 'rclone',
+      args: ['copyto', result.filePath!, `r2:bangumi-status/${result.filePath!.split('/').pop()}`],
+    });
+    expect(spawned[2]).toEqual({
+      command: 'rclone',
+      args: ['delete', '--min-age', '7d', 'r2:bangumi-status', '--include=bgmchat_backup_*.sql'],
+    });
     expect(result.filePath?.endsWith('bgmchat_backup_2026-05-26T12-00-00-000Z.sql')).toBe(true);
   });
 });

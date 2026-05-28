@@ -3,12 +3,13 @@ import { basename, join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { config } from '../config/env.js';
 import { pool } from '../db/pool.js';
-import { nextBackupDelayMs, uploadBackupToGitHub } from './backupService.js';
+import { cleanOldR2Backups, nextBackupDelayMs, uploadBackupToR2 } from './backupService.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
-type UploadFn = typeof uploadBackupToGitHub;
+type R2Config = typeof config.r2Backup;
+type UploadFn = typeof uploadBackupToR2;
+type R2CleanupFn = typeof cleanOldR2Backups;
 
 interface ChatLogRow {
   id: number | string;
@@ -36,11 +37,10 @@ interface ChatLogBackupOptions {
   hour?: number;
   runOnStart?: boolean;
   windowDays?: number;
-  tagPrefix?: string;
-  github?: typeof config.githubBackup;
+  r2?: R2Config;
   queryFn?: QueryFn;
-  fetchFn?: FetchFn;
   uploadFn?: UploadFn;
+  r2CleanupFn?: R2CleanupFn;
   now?: () => Date;
 }
 
@@ -55,7 +55,7 @@ export interface ChatLogBackupResult {
   status: 'disabled' | 'ok' | 'error';
   filePath?: string;
   messageCount?: number;
-  uploadedToGitHub?: boolean;
+  uploadedToR2?: boolean;
   deletedOldBackups?: string[];
   error?: string;
 }
@@ -150,11 +150,10 @@ export class ChatLogBackupService {
   private readonly hour: number;
   private readonly runOnStart: boolean;
   private readonly windowDays: number;
-  private readonly tagPrefix: string;
-  private readonly github: typeof config.githubBackup;
+  private readonly r2: R2Config;
   private readonly queryFn: QueryFn;
-  private readonly fetchFn: FetchFn;
   private readonly uploadFn: UploadFn;
+  private readonly r2CleanupFn: R2CleanupFn;
   private readonly now: () => Date;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
@@ -166,11 +165,10 @@ export class ChatLogBackupService {
     this.hour = options.hour ?? config.chatLogBackup.hour;
     this.runOnStart = options.runOnStart ?? config.chatLogBackup.runOnStart;
     this.windowDays = options.windowDays ?? config.chatLogBackup.windowDays;
-    this.tagPrefix = options.tagPrefix ?? config.chatLogBackup.tagPrefix;
-    this.github = options.github ?? config.githubBackup;
+    this.r2 = options.r2 ?? config.r2Backup;
     this.queryFn = options.queryFn ?? defaultQueryFn;
-    this.fetchFn = options.fetchFn ?? fetch;
-    this.uploadFn = options.uploadFn ?? uploadBackupToGitHub;
+    this.uploadFn = options.uploadFn ?? uploadBackupToR2;
+    this.r2CleanupFn = options.r2CleanupFn ?? cleanOldR2Backups;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -212,20 +210,16 @@ export class ChatLogBackupService {
 
       const payload = serializeChatLogRows(rows);
       await writeFile(filePath, gzipSync(Buffer.from(payload, 'utf-8')));
-      const uploadedToGitHub = await this.uploadFn(
-        filePath,
-        { ...this.github, tagPrefix: this.tagPrefix },
-        this.fetchFn,
-        range.start,
-      );
+      const uploadedToR2 = await this.uploadFn(filePath, this.r2);
       const deletedOldBackups = await cleanOldChatLogBackups(this.dir, this.keepDays, this.now());
+      await this.r2CleanupFn(this.r2, this.keepDays, 'chatlog_*.jsonl.gz');
       console.info(`[chat-log-backup] completed ${basename(filePath)} messages=${rows.length}`);
 
       return {
         status: 'ok',
         filePath,
         messageCount: rows.length,
-        uploadedToGitHub,
+        uploadedToR2,
         deletedOldBackups,
       };
     } catch (error) {

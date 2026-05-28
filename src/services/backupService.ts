@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
 import type { SpawnOptions } from 'node:child_process';
-import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises';
+import { mkdir, readdir, stat, unlink } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { config } from '../config/env.js';
 
 type DbConfig = typeof config.db;
+type R2Config = typeof config.r2Backup;
 
 interface SpawnedProcess {
   once(event: 'error', listener: (error: Error) => void): unknown;
@@ -17,23 +18,11 @@ type SpawnProcess = (
   options: SpawnOptions,
 ) => SpawnedProcess;
 
-type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
-
 interface PgDumpInvocation {
   command: string;
   args: string[];
   env: Record<string, string>;
   databaseName: string;
-}
-
-interface GithubReleaseAsset {
-  name?: string;
-  url?: string;
-}
-
-interface GithubRelease {
-  upload_url?: string;
-  assets?: GithubReleaseAsset[];
 }
 
 interface BackupServiceOptions {
@@ -45,16 +34,15 @@ interface BackupServiceOptions {
   pgDumpBin?: string;
   excludeTableData?: string[];
   db?: DbConfig;
-  github?: typeof config.githubBackup;
+  r2?: R2Config;
   spawnProcess?: SpawnProcess;
-  fetchFn?: FetchFn;
   now?: () => Date;
 }
 
 export interface BackupResult {
   status: 'disabled' | 'ok' | 'error';
   filePath?: string;
-  uploadedToGitHub?: boolean;
+  uploadedToR2?: boolean;
   deletedOldBackups?: string[];
   error?: string;
 }
@@ -145,6 +133,28 @@ async function runPgDump(invocation: PgDumpInvocation, spawnProcess: SpawnProces
   });
 }
 
+async function runCommand(command: string, args: string[], spawnProcess: SpawnProcess) {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawnProcess(command, args, { stdio: 'ignore' });
+
+    let settled = false;
+    const settle = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      callback();
+    };
+
+    child.once('error', (error) => settle(() => reject(error)));
+    child.once('close', (code, signal) => settle(() => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`${command} exited with ${code ?? signal ?? 'unknown status'}`));
+    }));
+  });
+}
+
 export async function cleanOldBackups(dir: string, keepDays: number, now = new Date()) {
   const deleted: string[] = [];
   const retentionMs = Math.max(0, keepDays) * 24 * 60 * 60 * 1000;
@@ -169,87 +179,29 @@ export async function cleanOldBackups(dir: string, keepDays: number, now = new D
   return deleted;
 }
 
-function githubHeaders(token: string) {
-  return {
-    authorization: `Bearer ${token}`,
-    accept: 'application/vnd.github+json',
-    'user-agent': 'ReDollarsNext-Backup-Service',
-    'x-github-api-version': '2022-11-28',
-  };
-}
-
-async function readJson(response: Response) {
-  return await response.json() as GithubRelease;
-}
-
-export async function uploadBackupToGitHub(
+export async function uploadBackupToR2(
   filePath: string,
-  github: typeof config.githubBackup,
-  fetchFn: FetchFn = fetch,
-  now = new Date(),
+  r2: R2Config,
+  spawnProcess: SpawnProcess = spawn,
 ) {
-  if (!github.repo || !github.token) return false;
-
-  const dateStr = now.toISOString().split('T')[0] ?? 'unknown-date';
-  const tag = `${github.tagPrefix}-${dateStr}`;
-  const headers = githubHeaders(github.token);
-  const releasesUrl = `https://api.github.com/repos/${github.repo}/releases`;
-  const releaseByTagUrl = `${releasesUrl}/tags/${encodeURIComponent(tag)}`;
-
-  let response = await fetchFn(releaseByTagUrl, { headers });
-  let release: GithubRelease;
-
-  if (response.status === 404) {
-    response = await fetchFn(releasesUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        tag_name: tag,
-        name: `Backup ${dateStr}`,
-        body: `Automated backup for ${dateStr}.`,
-        draft: false,
-        prerelease: false,
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to create GitHub release: ${response.status} ${response.statusText}`);
-    }
-    release = await readJson(response);
-  } else {
-    if (!response.ok) {
-      throw new Error(`Failed to fetch GitHub release: ${response.status} ${response.statusText}`);
-    }
-    release = await readJson(response);
-  }
-
-  const uploadUrlBase = release.upload_url?.split('{')[0];
-  if (!uploadUrlBase) throw new Error('GitHub release upload_url missing');
-
+  if (!r2.remote) return false;
   const fileName = basename(filePath);
-  const existingAsset = release.assets?.find((asset) => asset.name === fileName && asset.url);
-  if (existingAsset?.url) {
-    const deleteResponse = await fetchFn(existingAsset.url, { method: 'DELETE', headers });
-    if (!deleteResponse.ok) {
-      throw new Error(`Failed to delete existing GitHub asset: ${deleteResponse.status} ${deleteResponse.statusText}`);
-    }
-  }
+  await runCommand(r2.rcloneBin, ['copyto', filePath, `${r2.remote.replace(/\/+$/, '')}/${fileName}`], spawnProcess);
+  return true;
+}
 
-  const file = await readFile(filePath);
-  const uploadResponse = await fetchFn(`${uploadUrlBase}?name=${encodeURIComponent(fileName)}`, {
-    method: 'POST',
-    headers: {
-      ...headers,
-      'content-type': 'application/octet-stream',
-      'content-length': String(file.byteLength),
-    },
-    body: file,
-  });
-
-  if (!uploadResponse.ok) {
-    const message = await uploadResponse.text().catch(() => uploadResponse.statusText);
-    throw new Error(`GitHub backup upload failed: ${uploadResponse.status} ${message}`);
-  }
-
+export async function cleanOldR2Backups(
+  r2: R2Config,
+  keepDays: number,
+  includePattern: string,
+  spawnProcess: SpawnProcess = spawn,
+) {
+  if (!r2.remote) return false;
+  await runCommand(
+    r2.rcloneBin,
+    ['delete', '--min-age', `${Math.max(0, keepDays)}d`, r2.remote, `--include=${includePattern}`],
+    spawnProcess,
+  );
   return true;
 }
 
@@ -262,9 +214,8 @@ export class BackupService {
   private readonly pgDumpBin: string;
   private readonly excludeTableData: string[];
   private readonly db: DbConfig;
-  private readonly github: typeof config.githubBackup;
+  private readonly r2: R2Config;
   private readonly spawnProcess: SpawnProcess;
-  private readonly fetchFn: FetchFn;
   private readonly now: () => Date;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
@@ -278,9 +229,8 @@ export class BackupService {
     this.pgDumpBin = options.pgDumpBin ?? config.backup.pgDumpBin;
     this.excludeTableData = options.excludeTableData ?? config.backup.excludeTableData;
     this.db = options.db ?? config.db;
-    this.github = options.github ?? config.githubBackup;
+    this.r2 = options.r2 ?? config.r2Backup;
     this.spawnProcess = options.spawnProcess ?? spawn;
-    this.fetchFn = options.fetchFn ?? fetch;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -316,14 +266,15 @@ export class BackupService {
 
       console.info(`[backup] starting ${basename(filePath)}`);
       await runPgDump(invocation, this.spawnProcess);
-      const uploadedToGitHub = await uploadBackupToGitHub(filePath, this.github, this.fetchFn, this.now());
+      const uploadedToR2 = await uploadBackupToR2(filePath, this.r2, this.spawnProcess);
       const deletedOldBackups = await cleanOldBackups(this.dir, this.keepDays, this.now());
+      await cleanOldR2Backups(this.r2, this.keepDays, `${safeBackupStem(draftInvocation.databaseName)}_backup_*.sql`, this.spawnProcess);
       console.info(`[backup] completed ${filePath}`);
 
       return {
         status: 'ok',
         filePath,
-        uploadedToGitHub,
+        uploadedToR2,
         deletedOldBackups,
       };
     } catch (error) {

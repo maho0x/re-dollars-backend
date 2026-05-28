@@ -99,16 +99,17 @@ describe('chat log backup helpers', () => {
 });
 
 describe('ChatLogBackupService', () => {
-  it('writes a gzipped JSONL archive and uploads it with the chat-log tag prefix', async () => {
+  it('writes a gzipped JSONL archive and uploads it to R2', async () => {
     const dir = await tempDir();
-    const uploads: Array<{ filePath: string; tagPrefix: string; date: string }> = [];
+    const uploads: Array<{ filePath: string; remote: string | undefined }> = [];
+    const r2Cleanups: Array<{ remote: string | undefined; keepDays: number; includePattern: string }> = [];
     const queries: Array<{ sql: string; params: unknown[] }> = [];
     const service = new ChatLogBackupService({
       enabled: true,
       dir,
       keepDays: 30,
       windowDays: 1,
-      github: { repo: 'acme/backups', token: 'token', tagPrefix: 'backup' },
+      r2: { remote: 'r2:bangumi-status', rcloneBin: 'rclone' },
       queryFn: async (sql, params) => {
         queries.push({ sql, params });
         return {
@@ -132,8 +133,12 @@ describe('ChatLogBackupService', () => {
           ],
         };
       },
-      uploadFn: async (filePath, github, _fetchFn, now) => {
-        uploads.push({ filePath, tagPrefix: github.tagPrefix, date: now?.toISOString() ?? '' });
+      uploadFn: async (filePath, r2) => {
+        uploads.push({ filePath, remote: r2.remote });
+        return true;
+      },
+      r2CleanupFn: async (r2, keepDays, includePattern) => {
+        r2Cleanups.push({ remote: r2.remote, keepDays, includePattern });
         return true;
       },
       now: () => new Date('2026-05-28T04:30:00.000Z'),
@@ -143,15 +148,17 @@ describe('ChatLogBackupService', () => {
 
     expect(result.status).toBe('ok');
     expect(result.messageCount).toBe(1);
-    expect(result.uploadedToGitHub).toBe(true);
+    expect(result.uploadedToR2).toBe(true);
     expect(result.filePath?.endsWith('chatlog_2026-05-27.jsonl.gz')).toBe(true);
     expect(queries[0]?.params).toEqual([1_779_840_000, 1_779_926_400]);
     expect(uploads).toEqual([
       {
         filePath: result.filePath!,
-        tagPrefix: 'chat-log',
-        date: '2026-05-27T00:00:00.000Z',
+        remote: 'r2:bangumi-status',
       },
+    ]);
+    expect(r2Cleanups).toEqual([
+      { remote: 'r2:bangumi-status', keepDays: 30, includePattern: 'chatlog_*.jsonl.gz' },
     ]);
 
     const archive = await readFile(result.filePath!);

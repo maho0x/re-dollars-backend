@@ -59,16 +59,14 @@ const envSchema = z.object({
   BACKUP_RUN_ON_START: booleanFromEnv.default(false),
   BACKUP_PG_DUMP_BIN: z.string().default('pg_dump'),
   BACKUP_EXCLUDE_TABLE_DATA: z.string().default('auth_tokens'),
-  GITHUB_BACKUP_REPO: z.string().optional(),
-  GITHUB_BACKUP_TOKEN: z.string().optional(),
-  GITHUB_BACKUP_TAG: z.string().default('backup'),
+  R2_BACKUP_REMOTE: z.string().optional(),
+  R2_BACKUP_RCLONE_BIN: z.string().default('rclone'),
   CHAT_LOG_BACKUP_ENABLED: booleanFromEnv.default(false),
   CHAT_LOG_BACKUP_DIR: z.string().default('./chat-log-backups'),
   CHAT_LOG_BACKUP_KEEP_DAYS: z.coerce.number().default(30),
   CHAT_LOG_BACKUP_HOUR: z.coerce.number().default(4),
   CHAT_LOG_BACKUP_RUN_ON_START: booleanFromEnv.default(false),
   CHAT_LOG_BACKUP_WINDOW_DAYS: z.coerce.number().default(1),
-  CHAT_LOG_BACKUP_TAG: z.string().default('chat-log'),
 
   IMGHOST_DATABASE_URL: z.string().optional(),
   IMGHOST_DB_HOST: z.string().optional(),
@@ -264,12 +262,10 @@ export const config = {
     hour: env.CHAT_LOG_BACKUP_HOUR,
     runOnStart: env.CHAT_LOG_BACKUP_RUN_ON_START,
     windowDays: env.CHAT_LOG_BACKUP_WINDOW_DAYS,
-    tagPrefix: env.CHAT_LOG_BACKUP_TAG,
   },
-  githubBackup: {
-    repo: env.GITHUB_BACKUP_REPO,
-    token: env.GITHUB_BACKUP_TOKEN,
-    tagPrefix: env.GITHUB_BACKUP_TAG,
+  r2Backup: {
+    remote: env.R2_BACKUP_REMOTE,
+    rcloneBin: env.R2_BACKUP_RCLONE_BIN,
   },
   imghostDb: env.IMGHOST_DATABASE_URL
     ? { connectionString: env.IMGHOST_DATABASE_URL, max: env.IMGHOST_DB_MAX }
