@@ -51,6 +51,20 @@ describe('backup helpers', () => {
     });
   });
 
+  it('can exclude sensitive table data from pg_dump output', () => {
+    const invocation = buildPgDumpInvocation({
+      host: '127.0.0.1',
+      port: 5432,
+      user: 'bgmchat',
+      password: '',
+      database: 'bgm-chat',
+    }, '/tmp/out.sql', 'pg_dump', ['auth_tokens', 'session']);
+
+    expect(invocation.args).toContain('--exclude-table-data=auth_tokens');
+    expect(invocation.args).toContain('--exclude-table-data=session');
+    expect(invocation.args.indexOf('--exclude-table-data=auth_tokens')).toBeLessThan(invocation.args.indexOf('-f'));
+  });
+
   it('supports DATABASE_URL dumps and safe backup file stems', () => {
     const invocation = buildPgDumpInvocation(
       { connectionString: 'postgres://user:pass@example.test:5432/bgmchat?sslmode=require' },
@@ -168,6 +182,7 @@ describe('BackupService', () => {
         database: 'bgmchat',
       },
       github: { repo: 'acme/backups', token: 'token', tagPrefix: 'backup' },
+      excludeTableData: ['auth_tokens'],
       spawnProcess: spawnProcess as never,
       fetchFn,
       now: () => new Date('2026-05-26T12:00:00.000Z'),
@@ -180,6 +195,7 @@ describe('BackupService', () => {
     expect(result.deletedOldBackups).toEqual(['old.sql']);
     expect(spawned[0]?.command).toBe('pg_dump');
     expect(spawned[0]?.args).toContain('bgmchat');
+    expect(spawned[0]?.args).toContain('--exclude-table-data=auth_tokens');
     expect(result.filePath?.endsWith('bgmchat_backup_2026-05-26T12-00-00-000Z.sql')).toBe(true);
   });
 });

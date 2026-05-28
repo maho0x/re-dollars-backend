@@ -11,3 +11,4 @@ services:
       - ${HOST_VIDEOS_PATH:-./videos}:${VIDEOS_PATH:-/app/videos}:ro
       - ${HOST_PUBLIC_DIR:-./public}:${PUBLIC_DIR:-/app/public}:ro
       - ${HOST_BACKUP_DIR:-./backups}:${BACKUP_DIR:-/app/backups}
+      - ${HOST_CHAT_LOG_BACKUP_DIR:-./chat-log-backups}:${CHAT_LOG_BACKUP_DIR:-/app/chat-log-backups}

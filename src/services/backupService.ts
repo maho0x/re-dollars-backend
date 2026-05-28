@@ -43,6 +43,7 @@ interface BackupServiceOptions {
   hour?: number;
   runOnStart?: boolean;
   pgDumpBin?: string;
+  excludeTableData?: string[];
   db?: DbConfig;
   github?: typeof config.githubBackup;
   spawnProcess?: SpawnProcess;
@@ -84,11 +85,17 @@ export function nextBackupDelayMs(now: Date, hour: number) {
   return next.getTime() - now.getTime();
 }
 
-export function buildPgDumpInvocation(db: DbConfig, filePath: string, pgDumpBin = 'pg_dump'): PgDumpInvocation {
+export function buildPgDumpInvocation(
+  db: DbConfig,
+  filePath: string,
+  pgDumpBin = 'pg_dump',
+  excludeTableData: string[] = [],
+): PgDumpInvocation {
+  const excludeArgs = excludeTableData.map((table) => `--exclude-table-data=${table}`);
   if ('connectionString' in db) {
     return {
       command: pgDumpBin,
-      args: ['-F', 'p', '-f', filePath, db.connectionString],
+      args: ['-F', 'p', ...excludeArgs, '-f', filePath, db.connectionString],
       env: {},
       databaseName: databaseNameFromConnectionString(db.connectionString),
     };
@@ -105,6 +112,7 @@ export function buildPgDumpInvocation(db: DbConfig, filePath: string, pgDumpBin 
       '-U', db.user,
       '-d', db.database,
       '-F', 'p',
+      ...excludeArgs,
       '-f', filePath,
     ],
     env,
@@ -198,7 +206,7 @@ export async function uploadBackupToGitHub(
       body: JSON.stringify({
         tag_name: tag,
         name: `Backup ${dateStr}`,
-        body: `Automated database backup for ${dateStr}.`,
+        body: `Automated backup for ${dateStr}.`,
         draft: false,
         prerelease: false,
       }),
@@ -252,6 +260,7 @@ export class BackupService {
   private readonly hour: number;
   private readonly runOnStart: boolean;
   private readonly pgDumpBin: string;
+  private readonly excludeTableData: string[];
   private readonly db: DbConfig;
   private readonly github: typeof config.githubBackup;
   private readonly spawnProcess: SpawnProcess;
@@ -267,6 +276,7 @@ export class BackupService {
     this.hour = options.hour ?? config.backup.hour;
     this.runOnStart = options.runOnStart ?? config.backup.runOnStart;
     this.pgDumpBin = options.pgDumpBin ?? config.backup.pgDumpBin;
+    this.excludeTableData = options.excludeTableData ?? config.backup.excludeTableData;
     this.db = options.db ?? config.db;
     this.github = options.github ?? config.githubBackup;
     this.spawnProcess = options.spawnProcess ?? spawn;
@@ -299,10 +309,10 @@ export class BackupService {
     this.running = true;
     try {
       await mkdir(this.dir, { recursive: true });
-      const draftInvocation = buildPgDumpInvocation(this.db, '', this.pgDumpBin);
+      const draftInvocation = buildPgDumpInvocation(this.db, '', this.pgDumpBin, this.excludeTableData);
       const timestamp = this.now().toISOString().replace(/[:.]/g, '-');
       const filePath = join(this.dir, `${safeBackupStem(draftInvocation.databaseName)}_backup_${timestamp}.sql`);
-      const invocation = buildPgDumpInvocation(this.db, filePath, this.pgDumpBin);
+      const invocation = buildPgDumpInvocation(this.db, filePath, this.pgDumpBin, this.excludeTableData);
 
       console.info(`[backup] starting ${basename(filePath)}`);
       await runPgDump(invocation, this.spawnProcess);

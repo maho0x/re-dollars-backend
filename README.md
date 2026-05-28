@@ -62,11 +62,18 @@ Database backups are ported but opt-in. Set `BACKUP_ENABLED=true` to schedule a
 daily `pg_dump` at `BACKUP_HOUR`; `BACKUP_RUN_ON_START=true` also runs one at
 process startup. Backups are written to `BACKUP_DIR`, old `.sql` files are
 pruned after `BACKUP_KEEP_DAYS`, and Docker Compose persists them via
-`HOST_BACKUP_DIR`. If `GITHUB_BACKUP_REPO` and `GITHUB_BACKUP_TOKEN` are set,
-each backup is uploaded to a daily GitHub release tagged
+`HOST_BACKUP_DIR`. `BACKUP_EXCLUDE_TABLE_DATA` defaults to `auth_tokens` so
+session tokens are not dumped. If `GITHUB_BACKUP_REPO` and `GITHUB_BACKUP_TOKEN`
+are set, each backup is uploaded to a daily GitHub release tagged
 `GITHUB_BACKUP_TAG-YYYY-MM-DD`. The Docker image installs `postgresql-client`
 for `pg_dump`; direct/PM2 deployments need `pg_dump` on `PATH` or a
 `BACKUP_PG_DUMP_BIN` override.
+
+Chat log archives are separate from database backups. Set
+`CHAT_LOG_BACKUP_ENABLED=true` to export complete UTC days from `messages` as
+gzipped JSONL files in `CHAT_LOG_BACKUP_DIR`; old `.jsonl.gz` archives are
+pruned after `CHAT_LOG_BACKUP_KEEP_DAYS`. When the GitHub backup credentials are
+set, chat logs upload to releases tagged `CHAT_LOG_BACKUP_TAG-YYYY-MM-DD`.
 
 `LSKY_DB_*` is accepted for legacy image metadata compatibility. When
 configured, the native scraper looks up width and height in the LSKY MySQL

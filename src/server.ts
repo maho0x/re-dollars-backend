@@ -3,6 +3,7 @@ import { ensureSchema } from './db/schema.js';
 import { createRouter } from './http/router.js';
 import { DbTailer } from './services/tailer.js';
 import { backupService } from './services/backupService.js';
+import { chatLogBackupService } from './services/chatLogBackupService.js';
 import { DollarsScraper } from './services/scraper.js';
 import { searchSyncService } from './services/searchSyncService.js';
 import { closeLskyPool } from './services/lskyImageMetadataService.js';
@@ -22,6 +23,7 @@ const route = createRouter(hub, { scraper });
 
 await ensureSchema();
 backupService.start();
+chatLogBackupService.start();
 searchSyncService.start();
 await tailer.start();
 await scraper.start();
@@ -56,6 +58,7 @@ async function shutdown() {
   tailer.stop();
   scraper?.stop();
   backupService.stop();
+  chatLogBackupService.stop();
   await searchSyncService.stop();
   await closeLskyPool();
   await closePools();
