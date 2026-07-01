@@ -83,13 +83,14 @@ describe('LSKY image metadata helpers', () => {
       'external.jpg': [{ width: 100, height: 100 }],
     });
 
-    const inserted = await persistLskyImageMetadataForMessages(pg as never, [
+    const result = await persistLskyImageMetadataForMessages(pg as never, [
       { message: '[img]https://lsky.ry.mk/i/2026/05/existing.webp[/img]' },
       { message: '[img]https://lsky.ry.mk/i/2026/05/new.webp[/img]' },
       { message: '[img]https://cdn.example/external.jpg[/img]' },
     ], lsky);
 
-    expect(inserted).toBe(1);
+    expect(result.size).toBe(1);
+    expect(result.get('https://lsky.ry.mk/i/2026/05/new.webp')).toEqual({ width: 320, height: 240 });
     expect(pg.selects).toEqual([[
       [
         'https://lsky.ry.mk/i/2026/05/existing.webp',

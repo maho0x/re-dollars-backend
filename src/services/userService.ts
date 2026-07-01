@@ -184,14 +184,17 @@ export async function searchUsers(
   return { status: true, data: results };
 }
 
-async function getLocalProfile(identifier: string, isUid: boolean): Promise<UserProfile | null> {
+async function getLocalProfile(
+  identifier: string,
+  isUid: boolean,
+): Promise<{ profile: UserProfile; updatedAt: ProfileRow['updated_at'] } | null> {
   const query = isUid
     ? 'SELECT uid, username, nickname, avatar_url, sign, updated_at FROM users WHERE uid = $1'
     : 'SELECT uid, username, nickname, avatar_url, sign, updated_at FROM users WHERE username = $1';
 
   try {
     const { rows } = await searchPool.query<ProfileRow>(query, [isUid ? Number(identifier) : identifier]);
-    if (rows[0]) return normalizeProfile(rows[0]);
+    if (rows[0]) return { profile: normalizeProfile(rows[0]), updatedAt: rows[0].updated_at };
   } catch {
     // optional search DB
   }
@@ -201,7 +204,7 @@ async function getLocalProfile(identifier: string, isUid: boolean): Promise<User
     : 'SELECT uid, username, nickname, avatar_url, sign, updated_at FROM user_profiles WHERE username = $1';
   try {
     const { rows } = await pool.query<ProfileRow>(fallback, [isUid ? Number(identifier) : identifier]);
-    if (rows[0]) return normalizeProfile(rows[0]);
+    if (rows[0]) return { profile: normalizeProfile(rows[0]), updatedAt: rows[0].updated_at };
   } catch {
     // optional local table
   }
@@ -229,11 +232,56 @@ async function persistProfile(user: { id: number; username?: string; nickname?: 
   ]);
 }
 
+// Local user profiles (incl. sign) are a cache; refresh from Bangumi once stale.
+const PROFILE_FRESH_TTL_MS = 24 * 60 * 60 * 1000;
+
+function isStale(updatedAt: ProfileRow['updated_at']): boolean {
+  if (!updatedAt) return true;
+  const ts = updatedAt instanceof Date ? updatedAt.getTime() : Date.parse(String(updatedAt));
+  return Number.isNaN(ts) || Date.now() - ts > PROFILE_FRESH_TTL_MS;
+}
+
+async function fetchProfileFromBangumi(identifier: string): Promise<UserProfile | null> {
+  const apiPath = identifier === '0' || identifier === 'bangumi' ? '/users/bangumi' : `/users/${encodeURIComponent(identifier)}`;
+  const response = await fetchBangumiApi(apiPath);
+  if (!response.ok) return null;
+  const remote = await response.json() as {
+    id: number;
+    username?: string;
+    nickname?: string;
+    avatar?: { large?: string; medium?: string; small?: string };
+    sign?: string;
+  };
+  const user: UserProfile = {
+    id: remote.id,
+    username: remote.username ?? String(remote.id),
+    nickname: remote.nickname ?? remote.username ?? String(remote.id),
+    avatar: {
+      large: remote.avatar?.large ?? remote.avatar?.medium ?? remote.avatar?.small ?? '',
+      medium: remote.avatar?.medium ?? remote.avatar?.large ?? remote.avatar?.small ?? '',
+      small: remote.avatar?.small ?? remote.avatar?.medium ?? remote.avatar?.large ?? '',
+    },
+    sign: remote.sign ?? '',
+  };
+  await persistProfile(user).catch(() => undefined);
+  return user;
+}
+
 export async function getUser(identifier: string) {
   const isUid = identifier === '0' || /^\d+$/.test(identifier);
   const local = await getLocalProfile(identifier === 'bangumi' ? '0' : identifier, isUid || identifier === 'bangumi');
-  let user: UserProfile | null = local;
+  let user: UserProfile | null = local?.profile ?? null;
   let source: 'local' | 'remote-search' | 'bangumi' = local ? 'local' : 'bangumi';
+
+  // Cached profile (incl. sign) past its TTL: refresh from Bangumi, but keep
+  // the stale copy if the refresh fails.
+  if (local && isStale(local.updatedAt)) {
+    const fresh = await fetchProfileFromBangumi(identifier === 'bangumi' ? '0' : identifier).catch(() => null);
+    if (fresh) {
+      user = fresh;
+      source = 'bangumi';
+    }
+  }
 
   if (!user) {
     const remoteProfile = isUid || identifier === 'bangumi'
@@ -246,30 +294,8 @@ export async function getUser(identifier: string) {
   }
 
   if (!user) {
-    const apiPath = identifier === '0' || identifier === 'bangumi' ? '/users/bangumi' : `/users/${encodeURIComponent(identifier)}`;
-    const response = await fetchBangumiApi(apiPath);
-    if (response.ok) {
-      const remote = await response.json() as {
-        id: number;
-        username?: string;
-        nickname?: string;
-        avatar?: { large?: string; medium?: string; small?: string };
-        sign?: string;
-      };
-      user = {
-        id: remote.id,
-        username: remote.username ?? String(remote.id),
-        nickname: remote.nickname ?? remote.username ?? String(remote.id),
-        avatar: {
-          large: remote.avatar?.large ?? remote.avatar?.medium ?? remote.avatar?.small ?? '',
-          medium: remote.avatar?.medium ?? remote.avatar?.large ?? remote.avatar?.small ?? '',
-          small: remote.avatar?.small ?? remote.avatar?.medium ?? remote.avatar?.large ?? '',
-        },
-        sign: remote.sign ?? '',
-      };
-      await persistProfile(user).catch(() => undefined);
-      source = 'bangumi';
-    }
+    user = await fetchProfileFromBangumi(identifier);
+    if (user) source = 'bangumi';
   }
 
   if (!user) return null;

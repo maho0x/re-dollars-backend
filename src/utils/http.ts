@@ -29,15 +29,35 @@ export function noContent(request?: Request) {
   return new Response(null, { status: 204, headers: corsHeaders(request) });
 }
 
+export function isAllowedOrigin(origin: string): boolean {
+  if (!origin) return false;
+  for (const allowed of config.corsOrigins) {
+    if (allowed === '*') return true;
+    if (allowed === origin) return true;
+    if (allowed.includes('*')) {
+      const pattern = '^' + allowed
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex chars except '*'
+        .replace(/\*/g, '[^/]+') + '$';
+      try {
+        const regex = new RegExp(pattern, 'i');
+        if (regex.test(origin)) return true;
+      } catch {
+        // Ignore invalid regex patterns
+      }
+    }
+  }
+  return false;
+}
+
 export function corsHeaders(request?: Request): HeadersInit {
   const origin = request?.headers.get('origin') ?? '';
-  const allowOrigin = config.corsOrigins.includes(origin) ? origin : config.corsOrigins[0] ?? '*';
+  const allowOrigin = isAllowedOrigin(origin) ? origin : config.corsOrigins[0] ?? '*';
 
   return {
     'access-control-allow-origin': allowOrigin,
     'access-control-allow-credentials': 'true',
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'access-control-allow-headers': 'Content-Type,Authorization',
+    'access-control-allow-headers': 'Content-Type,Authorization,x-api-key',
     vary: 'Origin',
   };
 }

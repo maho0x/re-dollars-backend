@@ -48,7 +48,7 @@ import { getBgmPreview, previewGenericUrl } from '../services/previewService.js'
 import { checkReadiness, type ReadinessResult } from '../services/readinessService.js';
 import type { DollarsScraper } from '../services/scraper.js';
 import { servePublicAsset, serveVideoAsset } from '../services/staticFileService.js';
-import { proxyImageBatchUpload, proxyUpload } from '../services/uploadService.js';
+import { proxyImageBatchUpload, proxyUpload, upsertImageMetadataFromUpload } from '../services/uploadService.js';
 import type { WsHub } from '../ws/hub.js';
 import {
   ApiError,
@@ -85,6 +85,16 @@ function requireLocalRequest(request: Request, url: URL) {
   const realIp = request.headers.get('x-real-ip')?.trim();
   const address = forwarded || realIp || url.hostname;
   if (!isLocalAddress(address)) throw new ApiError(403, 'Forbidden');
+}
+
+function requireUploadMetadataKey(request: Request) {
+  const expected = config.upload.metadataAuthToken;
+  if (!expected) throw new ApiError(501, 'Upload metadata sync is not configured');
+
+  const authorization = request.headers.get('authorization') ?? '';
+  const bearer = authorization.toLowerCase().startsWith('bearer ') ? authorization.slice(7).trim() : '';
+  const provided = request.headers.get('x-api-key') ?? bearer;
+  if (provided !== expected) throw new ApiError(403, 'Forbidden');
 }
 
 async function parseOptionalJson(request: Request) {
@@ -133,6 +143,11 @@ export function createRouter(hub: WsHub, services: RouterServices = {}) {
         }
         const result = await services.scraper.scrapeOnce({ sinceTs, immobileCursor: true });
         return json({ success: true, inserted: result.inserted }, {}, request);
+      }
+
+      if (request.method === 'POST' && apiPath === '/internal/image-metadata') {
+        requireUploadMetadataKey(request);
+        return json(await upsertImageMetadataFromUpload(await parseJson(request)), {}, request);
       }
 
       if (apiPath.startsWith('/internal/bot/')) {

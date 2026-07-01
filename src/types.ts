@@ -21,6 +21,7 @@ export interface EnrichedMessage extends DbMessage {
     avatar: string;
     content: string;
     firstImage?: string;
+    firstImageMasked?: boolean;
   } | null;
 }
 

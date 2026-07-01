@@ -23,6 +23,24 @@ describe('normalizeBotStreamEvent', () => {
     });
   });
 
+  it('normalizes message edit payloads for bot streams', () => {
+    expect(normalizeBotStreamEvent({
+      type: 'message_edit',
+      payload: { id: 7, message: 'edited' },
+    })).toEqual({
+      kind: 'message_updated',
+      message: { id: 7, message: 'edited' },
+    });
+
+    expect(normalizeBotStreamEvent({
+      type: 'message_updated',
+      payload: [{ id: 8, message: 'updated' }],
+    })).toEqual({
+      kind: 'messages_updated',
+      messages: [{ id: 8, message: 'updated' }],
+    });
+  });
+
   it('ignores events that are not useful to bot automation', () => {
     expect(normalizeBotStreamEvent({ type: 'reaction_add', payload: {} })).toBeNull();
     expect(normalizeBotStreamEvent('not json')).toBeNull();

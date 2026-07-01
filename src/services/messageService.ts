@@ -29,7 +29,8 @@ function stripBBCode(text: string) {
     .replace(/\[url\]([\s\S]*?)\[\/url\]/gi, '$1')
     .replace(/\[user=[^\]]*\]([\s\S]*?)\[\/user\]/gi, '@$1')
     .replace(/\[(b|i|u|s|code|color|size|font|center|right|left)[^\]]*\]([\s\S]*?)\[\/\1\]/gi, '$2')
-    .replace(/\[[^\]]+\]/g, '')
+    .replace(/\[(?!mask|\/mask)[^\]]+\]/g, '')
+    .replace(/\[mask\]\s*\[\/mask\]/gi, '')
     .trim();
 }
 
@@ -157,12 +158,29 @@ export async function enrichMessages(
   const replies = new Map<number, NonNullable<EnrichedMessage['reply_details']>>();
   for (const row of repliesResult.rows) {
     const firstImage = firstImageFromMessage(row.message ?? '');
+    let firstImageMasked = false;
+    if (firstImage) {
+      const originalUrlMatch = /\[img\](https?:\/\/[^\]]+?)\[\/img\]/i.exec(row.message ?? '');
+      const originalUrl = originalUrlMatch?.[1]?.split('?')[0];
+      if (originalUrl) {
+        const maskRegex = /\[mask\]([\s\S]*?)\[\/mask\]/gi;
+        let match;
+        while ((match = maskRegex.exec(row.message ?? '')) !== null) {
+          const contentInsideMask = match[1];
+          if (contentInsideMask && contentInsideMask.includes(originalUrl)) {
+            firstImageMasked = true;
+            break;
+          }
+        }
+      }
+    }
     replies.set(Number(row.id), {
       uid: Number(row.uid),
       nickname: row.nickname,
       avatar: row.avatar,
       content: stripBBCode(row.message ?? '').slice(0, 50),
       ...(firstImage ? { firstImage } : {}),
+      ...(firstImageMasked ? { firstImageMasked } : {}),
     });
   }
 

@@ -77,6 +77,7 @@ const envSchema = z.object({
   IMGHOST_DB_PASS: z.string().optional(),
   IMGHOST_DB_NAME: z.string().optional(),
   IMGHOST_DB_MAX: z.coerce.number().default(2),
+  IMGHOST_DB_QUERY_TIMEOUT_MS: z.coerce.number().default(2000),
   // Legacy LSKY MySQL aliases — accepted only so existing .env files keep
   // parsing. The lookup itself targets imghost PostgreSQL now.
   LSKY_DB_HOST: z.string().optional(),
@@ -95,6 +96,7 @@ const envSchema = z.object({
   BGM_APP_SECRET: z.string().optional(),
   BGM_CALLBACK_URL: z.string().optional(),
   BGM_API_BASE: z.string().url().default('https://api.bgm.tv/v0'),
+  BGM_P1_API_BASE: z.string().url().default('https://next.bgm.tv/p1'),
   BGM_ORIGIN: z.string().url().default('https://chii.in'),
   BGM_DOLLARS_PATH: z.string().default('/dollars'),
   BGM_COOKIE_JSON: z.string().default('[]'),
@@ -102,6 +104,15 @@ const envSchema = z.object({
   BOT_USER_ID: optionalNumber,
   BOT_NICKNAME: z.string().default('布莱克·樱·Bangumi娘'),
   BOT_MEMORY_FILE: z.string().default('./MEMORY.md'),
+  AUTH_PUBLIC_URL: z.string().url().default('https://auth.ry.mk'),
+  // Origin/internal address used only for server-to-server session verification,
+  // to bypass the Cloudflare challenge that fronts AUTH_PUBLIC_URL. Falls back to
+  // AUTH_PUBLIC_URL when unset.
+  AUTH_INTERNAL_URL: z.string().url().optional(),
+  AUTH_CLIENT: z.string().default('re-dollars'),
+  AUTH_JWT_SECRET: z.string().optional(),
+  JWT_SECRET: z.string().optional(),
+  AUTH_SESSION_VERIFY_TIMEOUT_MS: z.coerce.number().default(1500),
 
   CORS_ORIGINS: z.string().default('https://bangumi.tv,https://bgm.tv,https://chii.in'),
   ADMIN_PASSWORD: z.string().optional(),
@@ -279,11 +290,13 @@ export const config = {
           max: env.IMGHOST_DB_MAX,
         }
       : null,
+  imghostDbQueryTimeoutMs: env.IMGHOST_DB_QUERY_TIMEOUT_MS,
   bgm: {
     appId: env.BGM_APP_ID,
     appSecret: env.BGM_APP_SECRET,
     callbackUrl: env.BGM_CALLBACK_URL ?? `${env.PUBLIC_BASE_URL.replace(/\/$/, '')}/api/v1/auth/callback`,
     apiBase: env.BGM_API_BASE.replace(/\/$/, ''),
+    p1ApiBase: env.BGM_P1_API_BASE.replace(/\/$/, ''),
     origin: env.BGM_ORIGIN.replace(/\/$/, ''),
     dollarsPath: env.BGM_DOLLARS_PATH.startsWith('/') ? env.BGM_DOLLARS_PATH : `/${env.BGM_DOLLARS_PATH}`,
     cookieJson: env.BGM_COOKIE_JSON,
@@ -294,6 +307,13 @@ export const config = {
     userId: env.BOT_USER_ID,
     nickname: env.BOT_NICKNAME,
     memoryFile: resolve(env.BOT_MEMORY_FILE),
+  },
+  auth: {
+    publicUrl: env.AUTH_PUBLIC_URL.replace(/\/$/, ''),
+    sessionVerifyUrl: (env.AUTH_INTERNAL_URL ?? env.AUTH_PUBLIC_URL).replace(/\/$/, ''),
+    client: env.AUTH_CLIENT,
+    jwtSecret: env.AUTH_JWT_SECRET ?? env.JWT_SECRET,
+    sessionVerifyTimeoutMs: env.AUTH_SESSION_VERIFY_TIMEOUT_MS,
   },
   corsOrigins: env.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean),
   adminPassword: env.ADMIN_PASSWORD,
@@ -318,6 +338,7 @@ export const config = {
     imageAuthToken: env.UPLOAD_AUTH_TOKEN ?? (imageUsesRemoteProcessor ? remoteProcessorApiKey : undefined),
     fileAuthHeader: env.UPLOAD_AUTH_TOKEN ? env.UPLOAD_AUTH_HEADER : fileUsesRemoteProcessor ? 'x-api-key' : undefined,
     fileAuthToken: env.UPLOAD_AUTH_TOKEN ?? (fileUsesRemoteProcessor ? remoteProcessorApiKey : undefined),
+    metadataAuthToken: remoteProcessorApiKey ?? env.UPLOAD_AUTH_TOKEN,
   },
   ws: {
     path: env.WS_PATH,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { normalizeUploadBatchResponse, normalizeUploadResponse } from './uploadService.js';
+import { normalizeUploadBatchResponse, normalizeUploadResponse, upsertImageMetadataFromUpload } from './uploadService.js';
 
 describe('normalizeUploadResponse', () => {
   it('normalizes remote processor image responses', () => {
@@ -146,5 +146,63 @@ describe('normalizeUploadResponse', () => {
         },
       ],
     });
+  });
+});
+
+describe('upsertImageMetadataFromUpload', () => {
+  it('upserts valid image metadata rows and skips failed items', async () => {
+    const queries: unknown[][] = [];
+    const result = await upsertImageMetadataFromUpload({
+      items: [
+        {
+          status: true,
+          imageUrl: 'https://lsky.ry.mk/i/2026/a.webp',
+          width: '320',
+          height: 240,
+          placeholder: 'hash',
+        },
+        {
+          status: false,
+          imageUrl: 'https://lsky.ry.mk/i/2026/failed.webp',
+          width: 1,
+          height: 1,
+        },
+      ],
+    }, {
+      async query(_sql, params) {
+        queries.push(params ?? []);
+        return { rows: [] };
+      },
+    });
+
+    expect(result).toEqual({ status: true, upserted: 1 });
+    expect(queries).toEqual([[
+      'https://lsky.ry.mk/i/2026/a.webp',
+      320,
+      240,
+      'hash',
+    ]]);
+  });
+
+  it('accepts a single url-shaped metadata payload', async () => {
+    const queries: unknown[][] = [];
+    const result = await upsertImageMetadataFromUpload({
+      url: 'https://lsky.ry.mk/i/2026/b.webp',
+      width: 640,
+      height: 480,
+    }, {
+      async query(_sql, params) {
+        queries.push(params ?? []);
+        return { rows: [] };
+      },
+    });
+
+    expect(result).toEqual({ status: true, upserted: 1 });
+    expect(queries[0]).toEqual([
+      'https://lsky.ry.mk/i/2026/b.webp',
+      640,
+      480,
+      null,
+    ]);
   });
 });

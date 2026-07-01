@@ -164,6 +164,15 @@ export function normalizeBotStreamEvent(payload: unknown) {
     return id === null ? null : { kind: 'message_deleted', id };
   }
 
+  if (type === 'message_edit' || type === 'message_updated') {
+    const payload = data.payload;
+    if (Array.isArray(payload)) return { kind: 'messages_updated', messages: payload };
+    if (payload && typeof payload === 'object') return { kind: 'message_updated', message: payload };
+    const message = (data as Record<string, unknown>).message;
+    if (message && typeof message === 'object') return { kind: 'message_updated', message };
+    return null;
+  }
+
   if (type === 'typing_start' || type === 'typing_stop') {
     const user = userFromPayload(data);
     const uid = numberValue(user.id ?? user.uid ?? data.uid);

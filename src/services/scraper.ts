@@ -4,6 +4,7 @@ import { pool, searchPool } from '../db/pool.js';
 import type { DbMessage, EnrichedMessage } from '../types.js';
 import { generateUserColor } from '../utils/color.js';
 import { enrichMessages } from './messageService.js';
+import { fetchMissingLinkPreviews } from './previewService.js';
 import { persistLskyImageMetadataForMessages } from './lskyImageMetadataService.js';
 import type { WsHub } from '../ws/hub.js';
 
@@ -326,6 +327,7 @@ export class DollarsScraper {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private boostUntil = 0;
 
+
   constructor(
     private readonly hub: WsHub,
     private readonly onObserved?: (ids: { messageId?: number; notificationId?: number }) => void,
@@ -365,6 +367,7 @@ export class DollarsScraper {
 
     const client = await pool.connect();
     let enriched: EnrichedMessage[] = [];
+    let insertedRows: DbMessage[] = [];
     let notifications: NotificationInsert[] = [];
     let advanced = false;
 
@@ -381,10 +384,12 @@ export class DollarsScraper {
           'SELECT * FROM messages WHERE id = ANY($1) ORDER BY "timestamp" ASC, id ASC',
           [inserted.insertedLocalIds],
         );
-        await persistLskyImageMetadataForMessages(client, rows);
-        // Use the same transactional client so the metadata we just INSERTed
-        // is visible to the SELECTs inside enrichMessages — otherwise the
-        // first WS broadcast for this message ships without `image_meta`.
+        insertedRows = rows;
+        // The first broadcast must never wait on the old imghost database.
+        // Upload-time metadata sync writes dimensions into the local cache
+        // before the user sends the message in the common path; otherwise the
+        // message is broadcast without image_meta and a background task warms
+        // the cache for later reads.
         enriched = await enrichMessages(rows, { fetchMissingPreviews: false, queryClient: client });
         notifications = await insertNotifications(client, enriched, blockedUsers);
       }
@@ -411,18 +416,76 @@ export class DollarsScraper {
       client.release();
     }
 
+    // Mark observed IDs BEFORE broadcasting so the tailer does not
+    // re-broadcast the same rows during the gap between COMMIT and here.
     if (enriched.length > 0) {
       const maxMessageId = Math.max(...enriched.map((message) => message.id));
       this.onObserved?.({ messageId: maxMessageId });
+    }
+    for (const notification of notifications) {
+      this.onObserved?.({ notificationId: notification.id });
+    }
+
+    if (enriched.length > 0) {
       this.hub.broadcastNewMessages(enriched);
+      this.backfillImageMeta(insertedRows);
+      // Fetch link previews async after the initial low-latency broadcast,
+      // then push updates for messages that gained previews.
+      void this.fetchAndBroadcastLinkPreviews(enriched);
     }
 
     for (const notification of notifications) {
-      this.onObserved?.({ notificationId: notification.id });
       this.hub.sendToUser(notification.userId, { type: 'notification', payload: notification.payload });
     }
 
     return { inserted: enriched.length, advanced };
+  }
+
+  private backfillImageMeta(rows: DbMessage[]) {
+    if (!config.imghostDb) return;
+    void persistLskyImageMetadataForMessages(pool, rows).catch((error) => {
+      console.warn('[lsky] image metadata background backfill failed:', error instanceof Error ? error.message : error);
+    });
+  }
+
+  private async fetchAndBroadcastLinkPreviews(messages: EnrichedMessage[]) {
+    try {
+      const urlRegex = /(https?:\/\/[^\s<>"'\[\]]+)/gi;
+      const imgRegex = /\[img\](https?:\/\/[^\]]+?)\[\/img\]/gi;
+      const missingUrls: string[] = [];
+      for (const msg of messages) {
+        const content = msg.message ?? '';
+        urlRegex.lastIndex = 0;
+        imgRegex.lastIndex = 0;
+        const imgUrls = new Set<string>();
+        let m: RegExpExecArray | null;
+        while ((m = imgRegex.exec(content))) if (m[1]) imgUrls.add(m[1]);
+        while ((m = urlRegex.exec(content))) {
+          const url = m[1];
+          if (url && !imgUrls.has(url) && !msg.link_previews?.[url]) missingUrls.push(url);
+        }
+      }
+      if (missingUrls.length === 0) return;
+      const fetched = await fetchMissingLinkPreviews(missingUrls);
+      if (fetched.length === 0) return;
+      const previewMap = new Map(fetched.map((p) => [p.url, p]));
+      for (const msg of messages) {
+        const content = msg.message ?? '';
+        urlRegex.lastIndex = 0;
+        const links: Record<string, typeof fetched[0]> = {};
+        let m: RegExpExecArray | null;
+        while ((m = urlRegex.exec(content))) {
+          const url = m[1];
+          const p = url && previewMap.get(url);
+          if (url && p) links[url] = p;
+        }
+        if (Object.keys(links).length > 0) {
+          this.hub.broadcast({ type: 'message_edit', payload: { ...msg, link_previews: { ...msg.link_previews, ...links } } });
+        }
+      }
+    } catch {
+      // Non-critical — clients already have the message content.
+    }
   }
 
   private async tick() {

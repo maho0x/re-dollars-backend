@@ -1,5 +1,4 @@
 import pg from 'pg';
-import type { PoolClient } from 'pg';
 import { config } from '../config/env.js';
 
 interface MessageWithContent {
@@ -20,6 +19,10 @@ export interface LskyQueryPool {
   end?(): Promise<void>;
 }
 
+export interface ImageMetadataStore {
+  query<Row = unknown>(sql: string, params?: unknown[]): Promise<{ rows: Row[] }>;
+}
+
 const imgRegex = /\[img\](https?:\/\/[^\]]+?)\[\/img\]/gi;
 
 let lskyPool: pg.Pool | null = null;
@@ -27,7 +30,13 @@ let lskyPool: pg.Pool | null = null;
 function getLskyPool(): pg.Pool | null {
   if (!config.imghostDb) return null;
   if (!lskyPool) {
-    lskyPool = new pg.Pool(config.imghostDb);
+    lskyPool = new pg.Pool({
+      ...config.imghostDb,
+      connectionTimeoutMillis: config.imghostDbQueryTimeoutMs,
+      query_timeout: config.imghostDbQueryTimeoutMs,
+      statement_timeout: config.imghostDbQueryTimeoutMs,
+    } as pg.PoolConfig);
+    lskyPool.on('error', (err) => console.warn('[db:lsky] idle client error:', err.message));
   }
   return lskyPool;
 }
@@ -78,14 +87,15 @@ export async function lookupLskyDimensions(url: string, queryPool: LskyQueryPool
 }
 
 export async function persistLskyImageMetadataForMessages(
-  client: PoolClient,
+  client: ImageMetadataStore,
   messages: MessageWithContent[],
   queryPool: LskyQueryPool | null = getLskyPool(),
-) {
-  if (!queryPool || messages.length === 0) return 0;
+): Promise<Map<string, { width: number; height: number }>> {
+  const result = new Map<string, { width: number; height: number }>();
+  if (!queryPool || messages.length === 0) return result;
 
   const urls = collectImageUrls(messages);
-  if (urls.length === 0) return 0;
+  if (urls.length === 0) return result;
 
   const { rows } = await client.query<{ image_url: string }>(
     'SELECT image_url FROM image_metadata WHERE image_url = ANY($1)',
@@ -93,7 +103,6 @@ export async function persistLskyImageMetadataForMessages(
   );
   const existing = new Set(rows.map((row) => row.image_url));
 
-  let inserted = 0;
   for (const url of urls) {
     if (existing.has(url)) continue;
     try {
@@ -105,13 +114,13 @@ export async function persistLskyImageMetadataForMessages(
          ON CONFLICT (image_url) DO UPDATE SET width = $2, height = $3`,
         [url, dimensions.width, dimensions.height],
       );
-      inserted += 1;
+      result.set(url, dimensions);
     } catch (error) {
       console.warn('[lsky] image metadata lookup failed:', error instanceof Error ? error.message : error);
     }
   }
 
-  return inserted;
+  return result;
 }
 
 export async function closeLskyPool() {

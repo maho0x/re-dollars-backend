@@ -28,6 +28,10 @@ export interface NormalizedUploadBatchResponse extends Record<string, unknown> {
   message?: string;
 }
 
+interface QueryablePool {
+  query<Row = unknown>(sql: string, params?: unknown[]): Promise<{ rows: Row[] }>;
+}
+
 function stringValue(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
@@ -144,6 +148,41 @@ export function normalizeUploadBatchResponse(data: unknown, fallbackBaseUrl: str
   };
   if (message) normalized.message = message;
   return normalized;
+}
+
+function metadataItems(body: unknown) {
+  const record = recordValue(body);
+  const rawItems = Array.isArray(record?.items) ? record.items : [body];
+  return rawItems
+    .map((item) => {
+      const row = recordValue(item);
+      if (!row || row.status === false) return null;
+      const imageUrl = stringValue(row.imageUrl ?? row.image_url ?? row.url);
+      const width = numberValue(row.width);
+      const height = numberValue(row.height);
+      if (!imageUrl || !width || !height || width <= 0 || height <= 0) return null;
+      return {
+        imageUrl,
+        width,
+        height,
+        placeholder: stringValue(row.placeholder) ?? null,
+      };
+    })
+    .filter((item): item is { imageUrl: string; width: number; height: number; placeholder: string | null } => item !== null);
+}
+
+export async function upsertImageMetadataFromUpload(body: unknown, queryPool: QueryablePool = pool) {
+  const items = metadataItems(body);
+  for (const item of items) {
+    await queryPool.query(
+      `INSERT INTO image_metadata (image_url, width, height, placeholder)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (image_url) DO UPDATE SET width = $2, height = $3, placeholder = $4`,
+      [item.imageUrl, item.width, item.height, item.placeholder],
+    );
+  }
+
+  return { status: true, upserted: items.length };
 }
 
 async function persistUploadMetadata(kind: UploadKind, upload: NormalizedUploadResponse) {
