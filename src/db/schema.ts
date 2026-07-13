@@ -144,6 +144,13 @@ export async function ensureSchema() {
       value TEXT NOT NULL,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );`,
+    `CREATE TABLE IF NOT EXISTS push_tokens (
+      token TEXT PRIMARY KEY,
+      user_id INT NOT NULL,
+      platform VARCHAR(20) NOT NULL DEFAULT 'android',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ DEFAULT NOW()
+    );`,
   ];
 
   for (const sql of tableSql) {
@@ -157,6 +164,7 @@ export async function ensureSchema() {
     `CREATE INDEX IF NOT EXISTS idx_reactions_message_id ON message_reactions(message_id);`,
     `CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);`,
     `CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_push_tokens_user_id ON push_tokens(user_id);`,
     `CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON user_favorites(user_id);`,
     `CREATE INDEX IF NOT EXISTS idx_memories_user_id ON user_memories(user_id);`,
     `CREATE INDEX IF NOT EXISTS idx_video_processing_queue_status ON video_processing_queue(status);`,

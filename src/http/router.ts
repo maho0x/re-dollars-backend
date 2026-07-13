@@ -47,6 +47,7 @@ import { listNotifications, markAllNotificationsRead, markNotificationRead } fro
 import { getBgmPreview, previewGenericUrl } from '../services/previewService.js';
 import { checkReadiness, type ReadinessResult } from '../services/readinessService.js';
 import type { DollarsScraper } from '../services/scraper.js';
+import { registerPushToken, unregisterPushToken } from '../services/pushService.js';
 import { servePublicAsset, serveVideoAsset } from '../services/staticFileService.js';
 import { proxyImageBatchUpload, proxyUpload, upsertImageMetadataFromUpload } from '../services/uploadService.js';
 import type { WsHub } from '../ws/hub.js';
@@ -58,6 +59,7 @@ import {
   json,
   optionsResponse,
   parseJson,
+  requireAuth,
 } from '../utils/http.js';
 
 export function normalizeApiPath(pathname: string) {
@@ -350,6 +352,13 @@ export function createRouter(hub: WsHub, services: RouterServices = {}) {
       }
       if (request.method === 'POST' && apiPath === '/notifications/read-all') {
         return json(await markAllNotificationsRead(await parseJson(request)), {}, request);
+      }
+
+      if (request.method === 'POST' && apiPath === '/push/register') {
+        return json(await registerPushToken(requireAuth(ctx), await parseJson(request)), {}, request);
+      }
+      if (request.method === 'POST' && apiPath === '/push/unregister') {
+        return json(await unregisterPushToken(await parseJson(request)), {}, request);
       }
 
       if (request.method === 'GET' && apiPath === '/admin/blocklist') {
