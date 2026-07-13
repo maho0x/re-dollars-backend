@@ -146,6 +146,9 @@ const envSchema = z.object({
   SCRAPE_INTERVAL_MS: optionalNumber,
   SCRAPER_SAFETY_SWEEP_WINDOW_SEC: z.coerce.number().default(120),
   SCRAPER_SAFETY_SWEEP_EVERY_TICKS: z.coerce.number().default(5),
+
+  FCM_SERVICE_ACCOUNT_FILE: z.string().optional(),
+  FCM_SERVICE_ACCOUNT_JSON: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -347,6 +350,10 @@ export const config = {
     enabled: env.DB_TAIL_ENABLED,
     intervalMs: env.DB_TAIL_INTERVAL_MS,
     batchSize: env.DB_TAIL_BATCH_SIZE,
+  },
+  push: {
+    serviceAccountFile: env.FCM_SERVICE_ACCOUNT_FILE ? resolve(env.FCM_SERVICE_ACCOUNT_FILE) : undefined,
+    serviceAccountJson: env.FCM_SERVICE_ACCOUNT_JSON,
   },
   scraper: {
     enabled: env.SCRAPER_ENABLED,

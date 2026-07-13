@@ -1,6 +1,7 @@
 import { config } from '../config/env.js';
 import { getLatestMessageId, getMessagesAfter } from './messagesApi.js';
 import { getLatestNotificationId, getNotificationsAfter } from './notificationsService.js';
+import { sendPushToUser } from './pushService.js';
 import type { WsHub } from '../ws/hub.js';
 
 export class DbTailer {
@@ -48,6 +49,8 @@ export class DbTailer {
         this.lastNotificationId = Math.max(...notifications.map((notification) => notification.id));
         for (const notification of notifications) {
           this.hub.sendToUser(notification.user_id, { type: 'notification', payload: notification.payload });
+          // Always push; the app suppresses the system notification while foregrounded.
+          void sendPushToUser(notification.user_id, notification.payload);
         }
       }
     } catch (err) {
