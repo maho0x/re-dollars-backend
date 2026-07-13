@@ -16,19 +16,19 @@ let serviceAccount: ServiceAccount | null | undefined;
 function getServiceAccount(): ServiceAccount | null {
   if (serviceAccount !== undefined) return serviceAccount;
   serviceAccount = null;
-  const raw = config.push.serviceAccountJson
-    ?? (config.push.serviceAccountFile ? readFileSync(config.push.serviceAccountFile, 'utf8') : null);
-  if (raw) {
-    try {
+  try {
+    const raw = config.push.serviceAccountJson
+      ?? (config.push.serviceAccountFile ? readFileSync(config.push.serviceAccountFile, 'utf8') : null);
+    if (raw) {
       const parsed = JSON.parse(raw) as Partial<ServiceAccount>;
       if (parsed.project_id && parsed.client_email && parsed.private_key) {
         serviceAccount = { project_id: parsed.project_id, client_email: parsed.client_email, private_key: parsed.private_key };
       } else {
         console.warn('[push] service account JSON is missing project_id/client_email/private_key');
       }
-    } catch (err) {
-      console.warn('[push] failed to parse FCM service account:', err instanceof Error ? err.message : err);
     }
+  } catch (err) {
+    console.warn('[push] failed to load FCM service account:', err instanceof Error ? err.message : err);
   }
   return serviceAccount;
 }
