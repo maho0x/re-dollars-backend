@@ -6,6 +6,7 @@ import { generateUserColor } from '../utils/color.js';
 import { enrichMessages } from './messageService.js';
 import { fetchMissingLinkPreviews } from './previewService.js';
 import { persistLskyImageMetadataForMessages } from './lskyImageMetadataService.js';
+import { sendPushToUser } from './pushService.js';
 import type { WsHub } from '../ws/hub.js';
 
 interface ScraperCursor {
@@ -436,6 +437,9 @@ export class DollarsScraper {
 
     for (const notification of notifications) {
       this.hub.sendToUser(notification.userId, { type: 'notification', payload: notification.payload });
+      // These rows are marked seen on the tailer above, so its push hook never
+      // fires for scraped mentions — push here as well.
+      void sendPushToUser(notification.userId, notification.payload);
     }
 
     return { inserted: enriched.length, advanced };

@@ -116,7 +116,7 @@ async function deleteToken(token: string) {
 interface PushPayload {
   id: number;
   message_id: number;
-  uid: string;
+  uid: string | number;
   nickname: string;
   avatar: string;
   content: string;

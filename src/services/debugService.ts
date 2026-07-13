@@ -2,6 +2,7 @@ import { pool } from '../db/pool.js';
 import { ApiError } from '../utils/http.js';
 import type { WsHub } from '../ws/hub.js';
 import { assertAdminConfiguredForDebug } from './adminService.js';
+import { sendPushToUser } from './pushService.js';
 
 export async function testNotification(body: unknown, hub: WsHub) {
   assertAdminConfiguredForDebug(body);
@@ -29,19 +30,18 @@ export async function testNotification(body: unknown, hub: WsHub) {
     );
     await client.query('COMMIT');
 
-    hub.sendToUser(String(targetUid), {
-      type: 'notification',
-      payload: {
-        id: Number(notificationResult.rows[0].id),
-        message_id: Number(message.id),
-        uid: String(message.uid),
-        nickname: message.nickname,
-        avatar: message.avatar,
-        content: message.message,
-        timestamp: Number(message.timestamp),
-        type,
-      },
-    });
+    const payload = {
+      id: Number(notificationResult.rows[0].id),
+      message_id: Number(message.id),
+      uid: String(message.uid),
+      nickname: message.nickname,
+      avatar: message.avatar,
+      content: message.message,
+      timestamp: Number(message.timestamp),
+      type,
+    };
+    hub.sendToUser(String(targetUid), { type: 'notification', payload });
+    void sendPushToUser(targetUid, payload);
 
     return { status: true };
   } catch (err) {
